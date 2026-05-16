@@ -1,175 +1,232 @@
-# 📊 Análise dos Índices OpenSearch - Estado Atual
+# Índices OpenSearch — MineralRadar (estado atual)
 
-> Documento gerado em: 2026-02-09
-> Cluster: `search-supplyradar-prod-5arrhz7f5fcgh2xpj6uevjigoa.aos.sa-east-1.on.aws`
-
----
-
-## 📋 Resumo dos Índices
-
-| Índice | Documentos | Tamanho | Tipo | Descrição |
-|--------|------------|---------|------|-----------|
-| `anm_v001` | **25.254.131** | 5.6 GB | Principal | Processos ANM (jazidas minerais) |
-| `cnpj_v001` | **220.997.521** | 68.5 GB | Principal | Empresas CNPJ (estabelecimentos) |
-| `ibge_municipio_v001` | 5.631 | 931 MB | Referência | Municípios brasileiros com polígonos |
-| `rfb_cnae_v001` | 2.394 | 16.8 MB | Referência | Códigos CNAE com embeddings |
-| `anm_substancia_v001` | 862 | 5.1 MB | Auxiliar | Substâncias minerais com embeddings |
-| `anm_tipo-uso-substancia_v001` | 26 | 162.6 KB | Auxiliar | Tipos de uso de substância |
-| `anm_v002` | 0 | - | (vazio) | Provavelmente para migração futura |
-
-**Total: ~246 milhões de documentos, ~75 GB**
+> **Atualizado em:** 16 de maio de 2026  
+> **Cluster medido:** `mineralradar-local` (OpenSearch **3.6.0**, Docker `backend/docker-compose.local.yml`)  
+> **Endpoint típico dev:** `http://localhost:9200` (variáveis `OPENSEARCH_*` no `.env`)  
+> **Mapeamentos e criação:** `backend/scripts/setup_indices.py`  
+> **Listagem ao vivo:** `cd backend && python -m scripts.setup_indices --list`  
+> **Validação geo/jazidas:** `python scripts/validate_opensearch_cluster.py`
 
 ---
 
-## 🔍 Detalhamento por Índice
+## Escopo deste documento
 
-### 1. `anm_v001` - Processos ANM (Jazidas)
+Este arquivo descreve o **cenário real do cluster de desenvolvimento local** em 16/05/2026: contagens, tamanhos, saúde, lacunas de ingestão e implicações para os MCPs dos índices **`mr_*_v001`**.
 
-**Volume:** 25.2M documentos | 5.6 GB
+---
 
-Este é o índice principal de jazidas minerais. Estrutura muito rica com dados denormalizados.
+## Resumo executivo
 
-#### Campos Principais
+| Métrica | Valor (cluster local) |
+|--------|------------------------|
+| Índices `mr_*` definidos | **22** (`setup_indices.py`) |
+| Índices presentes | **20** |
+| Índices ausentes | **2** (`mr_autuacoes_v001`, `mr_cvm_listadas_v001`) |
+| Índices vazios (0 docs raiz) | **1** (`mr_ral_v001`) |
+| Documentos raiz (estimativa) | **~5,84 milhões** |
+| Armazenamento primário | **~3,5 GB** |
+| Status cluster | **green** (nó único); alguns índices **yellow** (réplica 0 em cluster single-node) |
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `dsProcesso` | keyword | Número do processo ANM (ex: "832.145/2018") |
-| `nrProcesso` | integer | Número numérico do processo |
-| `nrAnoProcesso` | integer | Ano do processo |
-| `nrNUP` | keyword | Número Único de Protocolo |
-| `btAtivo` | keyword | Status ativo/inativo |
-| `qtAreaHa` | double | Área em hectares |
-| `dtProtocolo` | date | Data de protocolo |
-| `dtPrioridade` | date | Data de prioridade |
+### Tabela consolidada — todos os índices `mr_*`
 
-#### Campos Aninhados (nested)
+Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**). Coluna **Docs (raiz)** = `_count` com `match_all` (documentos lógicos de negócio).
 
-| Campo | Tipo | Campos Internos |
-|-------|------|-----------------|
-| `faseProcesso` | object | `idFaseProcesso`, `dsFaseProcesso` |
-| `tipoRequerimento` | object | `idTipoRequerimento`, `dsTipoRequerimento` |
-| `unidadeAdministrativaRegional` | object | ID e descrição da unidade |
-| `substancias` | **nested** | `Substancia.nmSubstancia`, `tipoUsoSubstancia`, datas de vigência |
-| `municipios` | **nested** | Dados completos IBGE (código, nome, UF, mesorregião, microrregião, `geo_point`) |
-| `pessoas` | **nested** | Titulares e responsáveis com `detalhesCNPJ` completo |
-| `poligonos` | **nested** | **`geom` (geo_shape)**, `localizacao` (geo_point), área, substância, titular |
-| `eventos` | **nested** | Histórico de eventos com datas |
-| `titulos` | **nested** | Documentos legais (alvarás, portarias) |
-| `associacoes` | **nested** | Processos associados |
-| `documentacao` | **nested** | Documentos protocolados |
+| Índice | Fase | Docs (cat) | Docs (raiz) | Tamanho | Health | Fonte / ETL | MCP / uso principal |
+|--------|------|------------|-------------|---------|--------|-------------|---------------------|
+| `mr_jazidas_v001` | 1 | 906.780 | 906.780 | 1,5 GB | green | ANM SIGMINE + SCM + SICOP | Jazidas: `buscar_jazidas`, detalhes, vigência, disponibilidades |
+| `mr_cfem_v001` | 1 | 3.289.871 | 3.289.871 | 691 MB | green | ANM CFEM (`bot_cfem.py`) | Jazidas: CFEM, ranking arrecadação |
+| `mr_sigef_v001` | 2 | 1.411.595 | 1.411.595 | 1,0 GB | yellow | INCRA SIGEF (`bot_sigef.py`) | Geo: sobreposição imóveis rurais |
+| `mr_geoquimica_v001` | 2 | 305.955* | **20.342** | 13,3 MB | green | CPRM OGC API (`bot_geoquimica.py`) | Jazidas: `geoquimica_proxima`, `geoquimica_detalhes_amostra` |
+| `mr_cprm_v001` | 2 | 36.472 | 36.472 | 165,5 MB | green | CPRM GeoBank (`bot_cprm.py`) | Jazidas: ocorrências, enriquecimento `n_ocorrencias_cprm` |
+| `mr_mercado_v001` | 2 | 66.771 | 66.771 | 24,9 MB | green | ComexStat / AMB (`bot_mercado.py`) | Jazidas: séries de mercado / NCM |
+| `mr_empresas_v001` | 1 | 43.622 | 43.622 | 29,2 MB | green | RFB CNPJ filtrado (`bot_empresas.py`) | Empresas + enriquecimento titular em jazidas |
+| `mr_sicar_v001` | 2 | 56.134 | 56.134 | 35,9 MB | yellow | INCRA CAR (`bot_sicar.py`) | Geo: CAR / imóveis rurais (amostra parcial no dev) |
+| `mr_municipios_v001` | 1 | 5.572 | 5.572 | 227,1 MB | green | IBGE (`bot_municipios.py`) | Geo: município por nome/coordenada, `geo_shape` |
+| `mr_cnae_v001` | 1 | 1.359 | 1.359 | 16,3 MB | green | RFB CNAE (`bot_cnae.py`) | Empresas: resolução semântica de CNAE (k-NN) |
+| `mr_substancias_v001` | 1 | 358 | 358 | 6,7 MB | green | ANM substâncias (`bot_anm` / indexador) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
+| `mr_ferrovias_v001` | 2 | 1.865 | 1.865 | 23,5 MB | green | ANTT SHP (`ingest_ferrovias.py`) | Geo: `ferrovias_proximas`, geometria de trecho |
+| `mr_terras_indigenas_v001` | 1 | 657 | 657 | 7,6 MB | green | FUNAI (`bot_funai.py` / `bot_terras_indigenas.py`) | Geo + Jazidas: sobreposição TI |
+| `mr_ucs_v001` | 1 | 2.073 | 2.073 | 15,4 MB | green | IBAMA CNUC (`bot_ucs.py`) | Geo + Jazidas: sobreposição UC |
+| `mr_portos_v001` | 2 | 36 | 36 | 44,4 KB | green | MTransp + ANTAQ + curadoria (`ingest_portos.py`) | Geo: portos, rotas, `comparar_rotas` |
+| `mr_tipo_uso_v001` | 1 | 26 | 26 | 9,1 KB | green | ANM tipo de uso | Jazidas: uso de substância (k-NN) |
+| `mr_biomas_v001` | 1 | 6 | 6 | 3,5 MB | green | IBGE biomas (`bot_biomas.py`) | Geo: identificar bioma por ponto |
+| `mr_provincias_v001` | 1 | 8 | 8 | 31,1 KB | green | Derivado CPRM (`bot_provincias.py`) | Contexto geológico regional |
+| `mr_monitoring_v001` | 2 | 38 | 38 | 107 KB | yellow | DOU / eventos (`bot_monitoring.py`) | Alertas / monitoramento (piloto) |
+| `mr_ral_v001` | 2 | 0 | 0 | 208 B | green | ANM RAL (`bot_mercado` / futuro `bot_ral`) | Produção anual — **índice criado, sem ingestão** |
+| `mr_autuacoes_v001` | 2 | — | — | — | **ausente** | IBAMA SIFISC (`bot_autuacoes.py`) | Empresas: risco ambiental — **índice não criado no cluster** |
+| `mr_cvm_listadas_v001` | 2 | — | — | — | **ausente** | CVM cadastro + DFP (`bot_cvm.py`) | Empresas: `buscar_empresa_cvm` — **criar índice + rodar ETL** |
 
-#### ⚠️ Observações Importantes
+\* `mr_geoquimica_v001`: o `_cat/indices` soma documentos **nested** (`analises[]`); cada amostra tem dezenas de analitos → ~306K segmentos Lucene vs **~20K amostras** reais.
 
-1. **Sem campo `embedding`** - Não há busca vetorial direta no índice principal
-2. **Estrutura denormalizada** - Dados do CNPJ embutidos em `pessoas.detalhesCNPJ`
-3. **Geometria em nested** - O `geo_shape` está dentro de `poligonos.geom`
-4. **Múltiplos níveis de aninhamento** - Ex: `pessoas.detalhesCNPJ.socios` (nested dentro de nested)
+---
 
-#### Exemplo de Busca Geoespacial (nested)
+## Cobertura geográfica atual (dev local)
 
-```json
-{
-  "query": {
-    "nested": {
-      "path": "poligonos",
-      "query": {
-        "bool": {
-          "must": [
-            {
-              "geo_distance": {
-                "distance": "50km",
-                "poligonos.localizacao": {
-                  "lat": -23.55,
-                  "lon": -46.63
-                }
-              }
-            }
-          ]
-        }
-      }
-    }
-  }
-}
+O cluster local **não replica o Brasil inteiro** em todos os índices. Destaques medidos em 16/05/2026:
+
+| Índice | Cobertura observada |
+|--------|---------------------|
+| `mr_jazidas_v001` | ~907K processos (subconjunto ANM; meta produção ~25M ativos+inativos) |
+| `mr_geoquimica_v001` | Envelope BR: lat **+4,13°** a **−32,40°**, lon **−69,82°** a **−36,02°**; **~20K amostras** indexadas (OGC prevê ~65K) |
+| `mr_geoquimica_v001` | **0 amostras** em raio 50 km de Carajás (PA) e 25 km de Paraíso (MG) — lacuna de dados na subárea indexada, não falha de query |
+| `mr_ferrovias_v001` | Geometria presente (1.865 trechos), mas campo `nome`/`codigo_sigla` com **hashes** do ingest — busca textual por "Norte-Sul" retorna **0 hits** |
+| `mr_portos_v001` | 36 portos curados (Santos, Paranaguá, Itaqui, etc.) |
+| `mr_sicar_v001` | ~56K imóveis (dev parcial; produção prevista ~6,8M) |
+
+---
+
+## Arquitetura: fases e relacionamentos
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  FASE 1 — Núcleo regulatório + referência geo                               │
+│                                                                             │
+│  mr_substancias_v001 ──k-NN──► mr_jazidas_v001 ◄──enriquec── mr_cfem_v001   │
+│  mr_tipo_uso_v001     ──k-NN──►      │                                      │
+│  mr_empresas_v001 ◄──cnpj_basico────┤                                       │
+│  mr_cnae_v001       ──k-NN──► mr_empresas_v001                              │
+│  mr_municipios_v001 ◄──codigo IBGE──┘ (via município/UF)                   │
+│  mr_terras_indigenas_v001 / mr_ucs_v001 / mr_biomas_v001 → restrições geo   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  FASE 2 — Geologia, mercado, infraestrutura, monitoramento                  │
+│                                                                             │
+│  mr_cprm_v001 ──10 km──► mr_jazidas_v001 (n_ocorrencias_cprm, cprm_*)       │
+│  mr_geoquimica_v001 (amostras CPRM, nested analises)                        │
+│  mr_mercado_v001 / mr_ral_v001 (produção & comércio exterior)               │
+│  mr_sicar_v001 / mr_sigef_v001 (restrições fundiárias)                      │
+│  mr_portos_v001 / mr_ferrovias_v001 (logística — rotas Azure Maps + overlay) │
+│  mr_monitoring_v001 / mr_autuacoes_v001 (risco & alertas — em expansão)     │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Chaves de ligação
+
+| De | Para | Campo |
+|----|------|---------|
+| `mr_jazidas_v001` | `mr_empresas_v001` | `titular.cnpj_basico` = `cnpj_basico` |
+| `mr_jazidas_v001` | `mr_substancias_v001` | `substancias` / `substancias_desc` ↔ `nome_normalizado` |
+| `mr_jazidas_v001` | `mr_cfem_v001` | `numero_processo` |
+| `mr_jazidas_v001` | `mr_cprm_v001` | pré-computado: `cprm_ids_proximos`, `n_ocorrencias_cprm` |
+| `mr_empresas_v001` | `mr_cnae_v001` | `cnae_principal` = `codigo` |
+| `mr_empresas_v001` | `mr_autuacoes_v001` | `cnpj_basico` (quando indexado) |
+| `mr_empresas_v001` | `mr_cvm_listadas_v001` | `cnpj_basico` |
+| `mr_jazidas_v001` | `mr_cvm_listadas_v001` | `titular.cnpj_basico` = `cnpj_basico` |
+| `mr_cfem_v001` | `mr_jazidas_v001` | `numero_processo` |
+| Geo (coords) | `mr_municipios_v001` | `geo_shape` em `poligono` / `centroide` |
+
 ---
 
-### 2. `cnpj_v001` - Empresas CNPJ
+## Detalhamento por índice
 
-**Volume:** 221M documentos | 68.5 GB
+### `mr_jazidas_v001` — Processos minerários ANM
 
-Índice de estabelecimentos da Receita Federal.
+| | |
+|--|--|
+| **Volume local** | 906.780 docs · 1,5 GB |
+| **Schema** | Plano (sem nested profundo): `location` (geo_point), `geom` (geo_shape), `titular`, `substancias[]`, `cfem`, flags `n_restricoes_*`, correlação CPRM |
+| **ETL** | `bot_anm_direto.py`, `bot_scm.py`, `bot_sicop.py`, `bot_inativos.py`, `bot_enrich_municipio.py`, `bot_cprm.py --enrich-jazidas` |
+| **Busca** | BM25 pt-BR, filtros UF/município/fase/ativo, `geo_distance` em `location`, `geo_shape` em `geom` |
+| **k-NN** | Não — substâncias resolvidas via `mr_substancias_v001` + filtro `terms` |
 
-#### Campos Principais
+Campos críticos: `numero_processo`, `ativo`, `fase`, `situacao`, `substancias`, `substancias_desc`, `area_ha`, `location`, `geom`, `titular.*`, `cfem.*`, `cprm_*`, `restricoes_geo`.
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `id` | keyword | Identificador único |
-| `cnpjDv` | keyword | Dígito verificador CNPJ |
-| `cnpjOrdem` | keyword | Ordem do estabelecimento |
-| `nomeFantasia` | text (pt_brazilian) | Nome fantasia |
-| `uf` | keyword | Sigla do estado |
-| `localizacao` | **geo_point** | Coordenadas do estabelecimento |
-| `dataInicioAtividade` | date | Data de abertura |
-| `dataSituacaoCadastral` | date | Data da situação |
+---
 
-#### Campos Estruturados
+### `mr_cfem_v001` — Arrecadação CFEM
 
-| Campo | Tipo | Campos Internos |
-|-------|------|-----------------|
-| `empresa` | object | `cnpjBasico`, `razaoSocial`, `capitalSocial`, `naturezaJuridica`, `porteEmpresa` |
-| `cnaeFiscalPrincipal` | object | `codigo`, `descricao` |
-| `cnaeFiscalSecundaria` | **nested** | Lista de CNAEs secundários |
-| `situacaoCadastral` | object | `codigo`, `descricao` |
-| `motivoSituacaoCadastral` | object | Motivo da situação |
-| `municipio` | object | `codigo`, `descricao` |
-| `socios` | **nested** | Dados dos sócios (nome, CPF/CNPJ, qualificação, etc.) |
-| `simples` | object | Dados do Simples Nacional |
+| | |
+|--|--|
+| **Volume local** | 3.289.871 docs · 691 MB |
+| **Granularidade** | Um doc por processo × competência (ano/mês) × declarante |
+| **Campos** | `numero_processo`, `cnpj_basico`, `ano`, `mes`, `valor_arrecadado`, `substancia`, `uf` |
+| **Uso MCP** | Séries temporais, ranking por município/empresa, cruzamento com jazidas |
 
-#### Endereço
+---
 
-| Campo | Tipo |
-|-------|------|
-| `tipoLogradouro` | text |
-| `logradouro` | text |
-| `numero` | keyword |
-| `complemento` | text |
-| `bairro` | text |
-| `cep` | keyword |
+### `mr_empresas_v001` — CNPJ filtrado (universo mineral)
 
-#### ⚠️ Observações Importantes
+| | |
+|--|--|
+| **Volume local** | 43.622 docs · 29,2 MB (filtro: titular ANM, CNAE mineração, top CFEM) |
+| **Geo** | `location` (geo_point) |
+| **Sócios** | Arrays flat: `socios_cpf_cnpj[]`, `socios_nomes[]` (sem nested) |
+| **Risco IBAMA** | Campos `n_autuacoes`, `tem_risco_ibama` — preenchidos quando `mr_autuacoes_v001` existir |
 
-1. **Sem campo `embedding`** - Não há busca vetorial direta
-2. **geo_point disponível** - Permite buscas por proximidade
-3. **Sócios em nested** - Requer queries nested para filtrar por sócio
-4. **CNAE secundário em nested** - Permite filtrar por qualquer CNAE
+---
 
-#### Exemplo de Busca por CNAE + Geo
+### `mr_cvm_listadas_v001` — Companhias abertas CVM
+
+| | |
+|--|--|
+| **Volume esperado** | ~200–2.000 docs (filtro setor mineral + cross-ref jazidas/empresas) |
+| **Fonte** | `dados.cvm.gov.br` — `cad_cia_aberta.csv`; DFP anual opcional |
+| **Campos** | `cnpj_cia`, `cnpj_basico`, `cd_cvm`, `denom_social`, `tp_merc`, `sit`, `setor_ativ`, `financeiro.*` |
+| **ETL** | `python -m bots.bot_cvm --all` (download → index → enrich-jazidas → enrich-dfp) |
+| **Criação índice** | `python -m scripts.setup_indices --index mr_cvm_listadas_v001` |
+| **MCP** | `buscar_empresa_cvm`; enriquecimento em `detalhes_empresa` via `cnpj_basico` |
+| **Join** | `cnpj_basico` → `mr_empresas_v001` / `mr_jazidas_v001.titular.cnpj_basico` |
+
+Critérios de inclusão no ETL (`bot_cvm.py`): setor mineral na CVM **OU** CNPJ presente em jazidas **OU** em empresas filtradas.
+
+---
+
+### `mr_substancias_v001` + `mr_tipo_uso_v001` — Catálogos com embedding
+
+| Índice | Docs | k-NN |
+|--------|------|------|
+| `mr_substancias_v001` | 358 | `embedding` dim 1536, HNSW faiss |
+| `mr_tipo_uso_v001` | 26 | idem |
+
+Fluxo híbrido (`substancia.py`): uso semântico → k-NN/BM25 nos catálogos → filtro em `mr_jazidas_v001` por `substancias_desc.keyword` ou uso.
+
+---
+
+### `mr_municipios_v001` — Malha municipal IBGE
+
+| | |
+|--|--|
+| **Volume** | 5.572 municípios · 227 MB (polígonos) |
+| **Geo** | `centroide` (geo_point), `poligono` (geo_shape) |
+| **MCP Geo** | Resolver nome → coords; ponto dentro de município; contexto regional |
+
+---
+
+### `mr_cprm_v001` — Ocorrências minerais CPRM
+
+| | |
+|--|--|
+| **Volume** | 36.472 · 165 MB |
+| **Geo** | `location` (geo_point) |
+| **Campos** | `substancia_principal`, `importancia`, `status_economico`, `provincia`, `rochas_hospedeiras` |
+| **Correlação** | `bot_cprm.py --enrich-jazidas` atualiza `mr_jazidas_v001` num raio de 10 km |
+
+---
+
+### `mr_geoquimica_v001` — Amostras geoquímicas CPRM
+
+| | |
+|--|--|
+| **Docs raiz** | **20.342 amostras** (cat mostra ~306K por nested `analises`) |
+| **Fonte** | OGC API `geoservicos.sgb.gov.br` — rocha + mineral/minério |
+| **ID documento** | `GEO:{id_amostra}` |
+| **Campos** | `id_amostra`, `classe`, `projeto`, `location`, `analitos[]`, `analises` (nested: `analito`, `valor`, `unidade`, `qualificador`) |
+| **Tools** | `geoquimica_proxima`, `geoquimica_detalhes_amostra` |
+| **Limitação** | Cobertura espacial irregular; muitas regiões minerais sem amostras no subconjunto indexado |
+
+Exemplo de busca por proximidade (campo raiz `location`, não nested):
 
 ```json
 {
   "query": {
     "bool": {
-      "must": [
-        {
-          "term": {
-            "cnaeFiscalPrincipal.codigo": "0810-0/99"
-          }
-        },
-        {
-          "geo_distance": {
-            "distance": "30km",
-            "localizacao": {
-              "lat": -23.55,
-              "lon": -46.63
-            }
-          }
-        }
-      ],
       "filter": [
         {
-          "term": {
-            "situacaoCadastral.codigo": "02"
+          "geo_distance": {
+            "distance": "25km",
+            "location": { "lat": -20.95, "lon": -46.96 }
           }
         }
       ]
@@ -180,467 +237,122 @@ Este é o índice principal de jazidas minerais. Estrutura muito rica com dados 
 
 ---
 
-### 3. `ibge_municipio_v001` - Municípios
+### `mr_portos_v001` + `mr_ferrovias_v001` — Logística
 
-**Volume:** 5.631 documentos | 931 MB
+**Portos** (36 docs): `centroide`, `acesso_rodoviario`, `poligono`, `embedding_nome`, tipos `PORTO_ORGANIZADO` | `TUP` | etc. Ver `docs/SPEC_PORTOS_OPENSEARCH.md`.
 
-Dados geográficos dos municípios brasileiros.
+**Ferrovias** (1.865 trechos): `geom` (geo_shape), `centroide`, `nome`, `codigo_sigla`.
 
-#### Campos
+| Problema conhecido | Impacto | Correção |
+|--------------------|---------|----------|
+| Ingest ANTT sem coluna `NOME`/`SIGLA_EF` | `nome` = hash `antt-2024-linhaesta-o-h...` | Reingest `ingest_ferrovias.py` mapeando atributos reais do shapefile |
+| Busca "Norte-Sul" | 0 resultados | Depende da correção acima |
+| Rota no mapa | Azure Maps (rodoviário); overlay ferrovia é geometria, não rota ferroviária | Comportamento esperado |
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `idMunicipio` | keyword | Código IBGE 7 dígitos |
-| `idMunicipio6` | keyword | Código IBGE 6 dígitos |
-| `idMunicipioANM` | keyword | Código ANM |
-| `idMunicipioRFB` | keyword | Código RFB |
-| `idMunicipioBCB` | keyword | Código BCB |
-| `idMunicipioTSE` | keyword | Código TSE |
-| `nome` | text (ptbr_text) | Nome do município |
-| `siglaUF` | keyword | Sigla do estado |
-| `nomeUF` | text | Nome do estado |
-| `nomeRegiao` | text | Nome da região |
-| `nomeMesorregiao` | text | Mesorregião IBGE |
-| `nomeMicrorregiao` | text | Microrregião IBGE |
-| `idMesorregiao` | keyword | Código mesorregião |
-| `idMicrorregiao` | keyword | Código microrregião |
-| `amazoniaLegal` | boolean | Está na Amazônia Legal? |
-| `capitalUF` | boolean | É capital? |
-| `localizacao` | **geo_point** | Centro do município |
-| `localizacaoEconomica` | **geo_point** | Centro econômico |
-| `poligono` | **geo_shape** | ✅ **Polígono do município!** |
+---
 
-#### ⚠️ Observações Importantes
+### `mr_sigef_v001` + `mr_sicar_v001` — Fundiário
 
-1. **Tem geo_shape!** - Permite queries de interseção com polígonos
-2. **Múltiplos códigos** - Compatibilidade com ANM, RFB, BCB, TSE
-3. **Dois geo_points** - Centro geográfico e econômico
+| Índice | Docs local | Observação |
+|--------|------------|------------|
+| `mr_sigef_v001` | 1.411.595 · 1 GB | Certificações INCRA; yellow = réplica |
+| `mr_sicar_v001` | 56.134 · 36 MB | Amostra dev; meta ~6,8M em produção |
 
-#### Exemplo: Município por Coordenada
+---
 
-```json
-{
-  "query": {
-    "geo_shape": {
-      "poligono": {
-        "shape": {
-          "type": "point",
-          "coordinates": [-46.63, -23.55]
-        },
-        "relation": "contains"
-      }
-    }
-  }
-}
+### `mr_mercado_v001` — Comércio exterior / preços
+
+66.771 docs · 24,9 MB — séries ComexStat, metais (Metals-API), enriquecimento AMB. Tool: evolução de mercado por NCM/substância.
+
+---
+
+### `mr_terras_indigenas_v001` + `mr_ucs_v001` + `mr_biomas_v001`
+
+| Índice | Docs | Geo |
+|--------|------|-----|
+| TIs FUNAI | 657 | `poligono` + `centroide` |
+| UCs CNUC | 2.073 | idem |
+| Biomas IBGE | 6 | idem |
+
+Usados em sobreposição com processos (`verificar_restricoes` / enriquecimento PostGIS).
+
+---
+
+### `mr_provincias_v001` — Províncias minerais (derivado)
+
+8 polígonos derivados de hull CPRM por província (`bot_provincias.py`). Contexto geológico em respostas do agente.
+
+---
+
+### `mr_monitoring_v001` — Eventos (piloto)
+
+38 eventos · DOU/SEI/ANM — índice para alertas; volume crescente com `bot_monitoring.py`.
+
+---
+
+### Pendentes no cluster local
+
+| Índice | Situação | Próximo passo |
+|--------|----------|---------------|
+| `mr_ral_v001` | Criado, **0 docs** | Rodar ingest RAL/AMB |
+| `mr_autuacoes_v001` | **Não criado** | `python -m scripts.setup_indices --index mr_autuacoes_v001` + `bot_autuacoes.py` |
+| `mr_cvm_listadas_v001` | **Não criado** | `python -m scripts.setup_indices --index mr_cvm_listadas_v001` + `python -m bots.bot_cvm --all` |
+
+---
+
+## Capacidades de busca (MCP)
+
+| Tipo | Índices | Campo | Status |
+|------|---------|-------|--------|
+| Full-text pt-BR | `mr_jazidas_v001`, `mr_empresas_v001`, `mr_cprm_v001` | vários `_text_kw` | ✅ |
+| geo_distance | `mr_jazidas_v001` | `location` | ✅ |
+| geo_shape (interseção) | `mr_jazidas_v001`, `mr_municipios_v001`, TIs, UCs, biomas, portos, ferrovias | `geom` / `poligono` | ✅ (ferrovias: geometria ok, nome ruim) |
+| k-NN semântico | `mr_substancias_v001`, `mr_tipo_uso_v001`, `mr_cnae_v001`, `mr_portos_v001` | `embedding` / `embedding_nome` | ✅ |
+| k-NN no índice principal | `mr_jazidas_v001`, `mr_empresas_v001` | — | ❌ por desenho (2 passos) |
+| Nested (analitos) | `mr_geoquimica_v001` | `analises` | ✅ queries nested para filtro por analito |
+| Detalhe por ID | `mr_geoquimica_v001` | `GET GEO:{id_amostra}` | ✅ |
+
+---
+
+## Comandos operacionais
+
+```bash
+# Listar índices com contagens (a partir de backend/)
+cd backend && source ../.env && source .venv/bin/activate
+python -m scripts.setup_indices --list
+
+# Criar índice ausente
+python -m scripts.setup_indices --index mr_autuacoes_v001
+python -m scripts.setup_indices --index mr_cvm_listadas_v001
+
+# ETL CVM (a partir de mineral-radar-etl/)
+python -m bots.bot_cvm --all
+
+# Validar cluster + probes Carajás / geoquímica
+python scripts/validate_opensearch_cluster.py
+
+# Contagem raiz vs cat (ex.: geoquímica)
+curl -s 'http://localhost:9200/mr_geoquimica_v001/_count'
+curl -s 'http://localhost:9200/_cat/indices/mr_geoquimica_v001?v'
 ```
 
 ---
 
-### 4. `rfb_cnae_v001` - Códigos CNAE
+## Referências no repositório
 
-**Volume:** 2.394 documentos | 16.8 MB
-
-Tabela de classificação de atividades econômicas **COM EMBEDDINGS**.
-
-#### Campos
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `codigo` | keyword | Código CNAE (ex: "0810-0/99") |
-| `secao` | keyword | Letra da seção |
-| `nomeSecao` | text | Nome da seção |
-| `divisao` | keyword | Código divisão |
-| `nomeDivisao` | text | Nome da divisão |
-| `grupo` | keyword | Código grupo |
-| `nomeGrupo` | text | Nome do grupo |
-| `classe` | keyword | Código classe |
-| `nomeClasse` | text | Nome da classe |
-| `subclasse` | keyword | Código subclasse |
-| `nomeSubclasse` | text | Nome da subclasse |
-| `nivel` | keyword | Nível hierárquico |
-| `hierarquia` | text | Hierarquia completa |
-| `notasExplicativas` | text | Notas explicativas |
-| `conteudo` | text | Texto agregado (copy_to) |
-| `textoSemantico` | text | Texto para embedding |
-| `embedding` | **knn_vector (1536)** | ✅ **Embedding para busca vetorial!** |
-
-#### ✅ Este índice JÁ TEM busca vetorial!
-
-```json
-{
-  "query": {
-    "knn": {
-      "embedding": {
-        "vector": [0.1, 0.2, ...],
-        "k": 10
-      }
-    }
-  }
-}
-```
+| Documento / código | Conteúdo |
+|--------------------|----------|
+| `docs/BASES_DADOS_MINERALRADAR.md` | Fontes públicas e prioridade de ETL |
+| `docs/SPEC_ETL_MINERALRADAR.md` | Pipeline PostGIS → OpenSearch |
+| `docs/MCP_SERVER_JAZIDAS.md` | Tools que consomem cada índice |
+| `docs/MCP_SERVER_GEO.md` | Portos, ferrovias, municípios |
+| `docs/MCP_SERVER_EMPRESAS.md` | CNPJ, CNAE, CVM |
+| `mineral-radar-etl/bots/` | Bots de ingestão por fonte |
 
 ---
 
-### 5. `anm_substancia_v001` - Substâncias Minerais
-
-**Volume:** 862 documentos | 5.1 MB
-
-Tabela de substâncias minerais **COM EMBEDDINGS**.
-
-#### Campos
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `idSubstancia` | integer | ID da substância |
-| `nmSubstancia` | text (pt_brazilian) | Nome da substância |
-| `embedding` | **knn_vector (1536)** | ✅ **Embedding para busca vetorial!** |
-
-#### ✅ Permite busca semântica de substâncias
-
-"Areia para construção" → encontra "Areia", "Areia lavada", "Areia industrial"
-
----
-
-### 6. `anm_tipo-uso-substancia_v001` - Tipos de Uso
-
-**Volume:** 26 documentos | 162.6 KB
-
-Tabela de tipos de uso de substâncias **COM EMBEDDINGS**.
-
-#### Campos
-
-| Campo | Tipo |
-|-------|------|
-| `idTipoUsoSubstancia` | integer |
-| `dsTipoUsoSubstancia` | text (pt_brazilian) |
-| `embedding` | **knn_vector (1536)** |
-
----
-
-## 🔗 Relacionamentos entre Índices
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         RELACIONAMENTOS                                     │
-│                                                                             │
-│  ┌──────────────┐                      ┌──────────────┐                     │
-│  │  anm_v001    │─────────────────────►│  cnpj_v001   │                     │
-│  │  (Jazidas)   │  pessoas.detalhesCNPJ│  (Empresas)  │                     │
-│  │              │  .empresa.cnpjBasico │              │                     │
-│  │  25M docs    │         =            │  221M docs   │                     │
-│  └──────┬───────┘  empresa.cnpjBasico  └──────┬───────┘                     │
-│         │                                      │                             │
-│         │ municipios.idMunicipio               │ municipio.codigo            │
-│         │                                      │                             │
-│         └──────────────┬───────────────────────┘                             │
-│                        │                                                     │
-│                        ▼                                                     │
-│               ┌────────────────┐                                             │
-│               │ibge_municipio  │                                             │
-│               │    _v001       │                                             │
-│               │   5.6K docs    │                                             │
-│               │  (geo_shape!)  │                                             │
-│               └────────────────┘                                             │
-│                                                                             │
-│  ┌──────────────┐         ┌──────────────┐         ┌──────────────┐         │
-│  │anm_substancia│         │anm_tipo-uso  │         │ rfb_cnae_v001│         │
-│  │    _v001     │         │_substancia   │         │              │         │
-│  │  862 docs    │         │   _v001      │         │  2.4K docs   │         │
-│  │ (embedding!) │         │   26 docs    │         │ (embedding!) │         │
-│  └──────────────┘         │ (embedding!) │         └──────────────┘         │
-│         │                 └──────────────┘                │                 │
-│         │                        │                        │                 │
-│         └────────────────────────┴────────────────────────┘                 │
-│                                  │                                          │
-│                    Busca semântica por termo                                │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Chaves de Ligação
-
-| De | Para | Campo de ligação |
-|----|------|------------------|
-| `anm_v001` → `cnpj_v001` | `pessoas.detalhesCNPJ.empresa.cnpjBasico` = `empresa.cnpjBasico` |
-| `anm_v001` → `ibge_municipio_v001` | `municipios.idMunicipio` = `idMunicipio` |
-| `cnpj_v001` → `ibge_municipio_v001` | `municipio.codigo` = `idMunicipioRFB` |
-| `anm_v001` → `anm_substancia_v001` | `substancias.Substancia.idSubstancia` = `idSubstancia` |
-| `cnpj_v001` → `rfb_cnae_v001` | `cnaeFiscalPrincipal.codigo` = `codigo` |
-
----
-
-## 🎯 Capacidades de Busca Disponíveis
-
-### ✅ Já Implementado
-
-| Tipo | Índice | Campo | Status |
-|------|--------|-------|--------|
-| Full-text (pt-BR) | `anm_v001` | Múltiplos campos | ✅ |
-| Full-text (pt-BR) | `cnpj_v001` | Múltiplos campos | ✅ |
-| Geo-distance | `anm_v001` | `poligonos.localizacao` (nested) | ✅ |
-| Geo-distance | `cnpj_v001` | `localizacao` | ✅ |
-| Geo-shape | `anm_v001` | `poligonos.geom` (nested) | ✅ |
-| Geo-shape | `ibge_municipio_v001` | `poligono` | ✅ |
-| k-NN (vetor) | `rfb_cnae_v001` | `embedding` | ✅ |
-| k-NN (vetor) | `anm_substancia_v001` | `embedding` | ✅ |
-| k-NN (vetor) | `anm_tipo-uso-substancia_v001` | `embedding` | ✅ |
-
-### ⚠️ Limitações Atuais
-
-| Tipo | Índice | Status | Observação |
-|------|--------|--------|------------|
-| k-NN (vetor) | `anm_v001` | ❌ Não existe | Não obrigatório - busca em 2 passos funciona |
-| k-NN (vetor) | `cnpj_v001` | ❌ Não existe | Não obrigatório - busca em 2 passos funciona |
-| Geo-shape | `cnpj_v001` | ❌ Apenas geo_point | Suficiente para busca por raio |
-| Geo-shape | `anm_v001.poligonos.geom` | ⚠️ **VERIFICAR** | Campo pode estar vazio - dados em `poligonos.poligonos` |
-
----
-
-## 📝 Implicações para os MCPs
-
-### MCP Jazidas (anm_v001)
-
-**Capacidades disponíveis:**
-- ✅ Busca por substância (via nested query + busca semântica em `anm_substancia_v001`)
-- ✅ Busca por município/UF
-- ✅ Busca por fase do processo
-- ✅ Busca por titular (nome da pessoa/empresa)
-- ✅ Busca geoespacial por raio (nested em `poligonos.localizacao`)
-- ✅ Busca geoespacial por polígono (nested em `poligonos.geom`)
-- ✅ Detalhes completos incluindo dados do CNPJ do titular
-
-**Estratégia de busca híbrida:**
-1. Buscar termo semelhante em `anm_substancia_v001` usando embedding
-2. Usar ID da substância para filtrar em `anm_v001`
-3. Aplicar filtros geoespaciais (nested)
-
-### MCP Empresas (cnpj_v001)
-
-**Capacidades disponíveis:**
-- ✅ Busca por razão social / nome fantasia
-- ✅ Busca por CNAE (via busca semântica em `rfb_cnae_v001`)
-- ✅ Busca por município/UF
-- ✅ Busca por situação cadastral
-- ✅ Busca geoespacial por raio
-- ✅ Filtro por sócios (nested)
-- ✅ Filtro por Simples Nacional / MEI
-
-**Estratégia de busca híbrida:**
-1. Buscar CNAE semelhante em `rfb_cnae_v001` usando embedding
-2. Usar código CNAE para filtrar em `cnpj_v001`
-3. Aplicar filtros geoespaciais
-
-### MCP Geo (ibge_municipio_v001)
-
-**Capacidades disponíveis:**
-- ✅ Buscar município por nome
-- ✅ Identificar município por coordenada (geo_shape contains)
-- ✅ Listar municípios por UF/região
-- ✅ Obter polígono do município para overlay
-- ✅ Validar se ponto está dentro de município
-
----
-
-## 🔴 Análise Crítica dos Mapeamentos
-
-### ⚠️ Problemas Identificados
-
-#### 1. `anm_v001` - Campo `geom` vs `poligonos.poligonos` (ERRO CRÍTICO)
-
-**O Problema:**
-- O mapeamento define `poligonos.geom` como `geo_shape`
-- **Os dados reais estão em `poligonos.poligonos`** com estrutura `{type, coordinates}`
-
-```json
-// MAPEAMENTO espera:
-"poligonos": {
-  "geom": { "type": "geo_shape" }  // ❌ Campo vazio nos docs
-}
-
-// DADOS REAIS têm:
-"poligonos": [{
-  "localizacao": { "lat": -20.64, "lon": -43.61 },  // ✅ geo_point funciona
-  "poligonos": {                                      // ❌ Nome confuso!
-    "type": "polygon",
-    "coordinates": [[[...], [...]]]
-  }
-}]
-```
-
-**Impacto:**
-- ❌ Busca `geo_shape` no campo `geom` **NÃO RETORNA RESULTADOS**
-- ✅ Busca `geo_distance` em `poligonos.localizacao` **FUNCIONA**
-
-**Causa Provável:** ETL populando campo errado ou mapeamento criado após ETL
-
----
-
-#### 2. Nesting Excessivo em `anm_v001`
-
-**Estrutura atual (confusa):**
-```
-anm_v001
-├── poligonos (nested)
-│   ├── localizacao (geo_point) ✅
-│   ├── poligonos (object) ← nome duplicado, confuso!
-│   │   ├── type
-│   │   └── coordinates
-│   └── geom (geo_shape) ← vazio!
-```
-
-**Níveis de aninhamento:**
-- `pessoas` → nested
-- `pessoas.detalhesCNPJ.socios` → nested dentro de nested dentro de nested (3 níveis!)
-- `pessoas.detalhesCNPJ.cnaeFiscalSecundaria` → nested (3 níveis)
-
-**Impacto:**
-- Queries complexas e lentas
-- Maior uso de memória
-- Difícil manutenção
-
----
-
-#### 3. Denormalização Excessiva em `anm_v001`
-
-**Dados do CNPJ copiados integralmente:**
-```json
-"pessoas": [{
-  "detalhesCNPJ": {
-    "empresa": { /* cópia completa */ },
-    "socios": [ /* cópia completa */ ],
-    "cnaeFiscalPrincipal": { /* cópia */ },
-    "cnaeFiscalSecundaria": [ /* cópia */ ],
-    // ... 40+ campos copiados
-  }
-}]
-```
-
-**Impacto:**
-- Índice `anm_v001` maior do que necessário
-- Dados podem ficar desatualizados (empresa muda, processo não atualiza)
-- Não é um erro, mas é uma escolha de design discutível
-
----
-
-### ✅ Aspectos Positivos
-
-| Aspecto | Status | Observação |
-|---------|--------|------------|
-| Full-text search | ✅ | Analyzers `pt_brazilian` e `pt_ascii` bem configurados |
-| Geo-point em `poligonos.localizacao` | ✅ | Funciona para busca por raio |
-| Geo-point em `cnpj_v001.localizacao` | ✅ | Funciona perfeitamente |
-| Geo-shape em `ibge_municipio_v001.poligono` | ✅ | Funciona para identificar município |
-| Embeddings em índices auxiliares | ✅ | CNAE e Substância prontos para busca semântica |
-
----
-
-### 📊 Sobre a Necessidade de Embeddings nos Índices Principais
-
-> **Conclusão: NÃO É OBRIGATÓRIO, mas seria útil**
-
-#### Por que NÃO é obrigatório:
-
-| Razão | Explicação |
-|-------|------------|
-| Full-text funciona | BM25 com stemming brasileiro já indexado |
-| Embeddings existem nos auxiliares | Busca semântica em 2 passos funciona |
-| Performance | Adicionar 1536 dims * 25M docs = ~150GB extras |
-
-#### Quando SERIA útil:
-
-| Caso de Uso | Benefício |
-|-------------|-----------|
-| "Encontre jazidas de material para pavimentação" | Evitaria o passo intermediário |
-| Busca por descrição livre | Melhor recall semântico |
-| Queries muito específicas | "areia para fundação de ponte" |
-
-#### Recomendação:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  ESTRATÉGIA HÍBRIDA ATUAL (recomendada para MVP)                │
-│                                                                 │
-│  1. Busca semântica em índice auxiliar (rápido, ~1ms)           │
-│  2. Query estruturada + geo no índice principal                 │
-│  3. Cache de IDs em Redis para termos frequentes                │
-│                                                                 │
-│  ✅ Funciona sem alteração nos índices principais               │
-│  ✅ Performance aceitável                                       │
-│  ✅ Não aumenta storage                                         │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│  ESTRATÉGIA FUTURA (se necessário)                              │
-│                                                                 │
-│  - Adicionar campo `embedding_descricao` em anm_v001            │
-│  - Texto: "{substancia} em {municipio} - {titular}"             │
-│  - Permite busca semântica direta em 1 passo                    │
-│  - Custo: ~150GB storage adicional                              │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🚀 Recomendações
-
-### Correções Urgentes (Pré-MCP)
-
-1. **🔴 Verificar campo `geom` vs `poligonos.poligonos`:**
-   - Confirmar com equipe de ETL qual é o campo correto
-   - Se `poligonos.poligonos` é o correto, atualizar mapeamento ou reindexar
-   - Query de geo_shape precisa apontar para o campo certo
-
-2. **Testar busca geo_shape:**
-   ```bash
-   # Este deve funcionar se o campo estiver correto:
-   GET /anm_v001/_search
-   {
-     "query": {
-       "nested": {
-         "path": "poligonos",
-         "query": {
-           "geo_shape": {
-             "poligonos.geom": {  # ou poligonos.poligonos?
-               "shape": { "type": "point", "coordinates": [-43.6, -20.6] }
-             }
-           }
-         }
-       }
-     }
-   }
-   ```
-
-### Curto Prazo (MCPs S5-S6)
-
-1. **Usar `poligonos.localizacao` (geo_point) para buscas por raio:**
-   - Funciona hoje
-   - Suficiente para maioria dos casos de uso
-
-2. **Implementar busca híbrida em dois passos:**
-   - Primeiro: busca semântica nos índices auxiliares (substância, CNAE)
-   - Segundo: query estruturada + geo no índice principal
-
-3. **Cache de IDs semânticos em Redis:**
-   - Armazenar mapeamento "termo" → "IDs de substância"
-   - Evitar re-executar busca vetorial para termos frequentes
-
-### Médio Prazo (ETL - Correções)
-
-1. **Corrigir campo geográfico em `anm_v001`:**
-   - Renomear `poligonos.poligonos` para `poligonos.geom`
-   - Ou criar novo campo `poligonos.geom` com os dados corretos
-
-2. **Considerar desnormalização otimizada:**
-   - Promover `poligonos.localizacao` para campo root-level
-   - Evitar nested em buscas simples de proximidade
-
-3. **Avaliar adição de embeddings (opcional):**
-   - Só se a busca em 2 passos não atender requisitos de UX
-   - Custo/benefício precisa ser avaliado
-
----
-
-## Apêndice — `mr_geoquimica_v001` (CPRM Geoquímica)
-
-Índice de **amostras analíticas** do SGB/CPRM (coleções OGC API `analises-rocha` + `analises-mineral-minerio` em `geoservicos.sgb.gov.br`). Documentação de mapping e criação: `backend/scripts/setup_indices.py` (`MR_GEOQUIMICA`). Ingestão: `mineral-radar-etl/bots/bot_geoquimica.py`. Uso no agente: tool MCP **`geoquimica_proxima`** (servidor Jazidas). Campos principais: `id_amostra`, `classe` (Rocha | Mineral/Minério), `location` (`geo_point`), `analitos` (keyword flat), **`analises`** (nested: `analito`, `valor`, `unidade`, `qualificador`), metadados de laboratório e projeto.
-
+## Histórico deste arquivo
+
+| Data | Alteração |
+|------|-----------|
+| 2026-05-16 | Documento criado: índices `mr_*`, snapshot `mineralradar-local`, lacunas e notas operacionais |
