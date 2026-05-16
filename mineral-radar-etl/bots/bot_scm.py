@@ -403,8 +403,55 @@ def populate_substancias(
     embed_client,
     embed_deployment: str,
     dry_run: bool,
+    *,
+    data_dir: Path | None = None,
+    skip_download: bool = False,
 ) -> None:
-    """Popula mr_substancias_v001 com substâncias únicas + embeddings."""
+    """
+    Popula mr_substancias_v001.
+
+    Prioridade:
+      1. Tabela oficial ``Substancia.txt`` (microdados-scm.zip, ~862 linhas)
+      2. Fallback: nomes distintos nos CSVs SCM (legado dev parcial)
+    """
+    from bots.bot_sicop import SCM_MICRODADOS_FILE, download_microdados
+    from bots.bot_substancias_anm import (
+        build_documents,
+        index_substancias_catalog,
+    )
+    from bots.common.anm_substancias import (
+        build_scm_tipo_uso_map,
+        parse_substancias_microdados,
+    )
+
+    base = data_dir or settings.etl_data_dir
+    micro_path = base / "scm" / SCM_MICRODADOS_FILE
+    if not micro_path.exists() and not dry_run:
+        downloaded = download_microdados(base, skip=skip_download)
+        if downloaded:
+            micro_path = downloaded
+
+    if micro_path.exists():
+        official = parse_substancias_microdados(micro_path)
+        if len(official) >= 100:
+            scm_map = build_scm_tipo_uso_map(df)
+            docs = build_documents(official, scm_map, tipo_to_id)
+            log.info(
+                "substancias.source",
+                source="ANM/Substancia.txt",
+                total=len(docs),
+            )
+            index_substancias_catalog(
+                client, docs, embed_client, embed_deployment, dry_run,
+                replace=True,
+            )
+            return
+        log.warning(
+            "substancias.official.empty",
+            path=str(micro_path),
+            fallback="SCM CSV distinct names",
+        )
+
     sub_col  = next((c for c in df.columns if "substancia" in c), None)
     tipo_col = next((c for c in df.columns if "tipo" in c and "uso" in c), None)
 
@@ -847,6 +894,7 @@ def main(
         populate_substancias(
             os_client, df, tipo_to_id,
             embed_client, embed_deployment, dry_run,
+            data_dir=data_dir, skip_download=skip_download,
         )
 
     # Etapa 3 — enriquece jazidas

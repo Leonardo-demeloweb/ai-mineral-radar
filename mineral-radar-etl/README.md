@@ -92,6 +92,10 @@ docker compose --profile run run --rm etl-runner \
 docker compose --profile run run --rm etl-runner \
     python -m bots.bot_cfem
 
+# Catálogo oficial de substâncias ANM (~862) → mr_substancias_v001
+docker compose --profile run run --rm etl-runner \
+    python -m bots.bot_substancias_anm
+
 # Indexar no OpenSearch
 docker compose --profile run run --rm etl-runner \
     python -m bots.bot_indexador --batch-size 500
@@ -137,6 +141,8 @@ python -m bots.bot_anm --uf AC
 |-----|-----|-----------|
 | `bot_anm` | `dadosabertos.anm.gov.br/SIGMINE/` | Diária |
 | `bot_cfem` | `dadosabertos.anm.gov.br/CFEM/` | Diária |
+| `bot_substancias_anm` | `dadosabertos.anm.gov.br/SCM/microdados/microdados-scm.zip` → `Substancia.txt` | Diária |
+| `bot_scm` | `dadosabertos.anm.gov.br/SCM/` (tipo_uso + substâncias; usa catálogo oficial se ZIP existir) | Diária |
 | `bot_funai` | `gov.br/funai` (WFS) | Mensal |
 | `bot_ibama` | `dados.mma.gov.br` (CNUC) | Mensal |
 | `bot_cprm` | `geoservicos.sgb.gov.br/ogcapi` (GeoBank `recursos-minerais`) | Mensal |

@@ -43,7 +43,7 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_sicar_v001` | 2 | 56.134 | 56.134 | 35,9 MB | yellow | INCRA CAR (`bot_sicar.py`) | Geo: CAR / imóveis rurais (amostra parcial no dev) |
 | `mr_municipios_v001` | 1 | 5.572 | 5.572 | 227,1 MB | green | IBGE (`bot_municipios.py`) | Geo: município por nome/coordenada, `geo_shape` |
 | `mr_cnae_v001` | 1 | 1.359 | 1.359 | 16,3 MB | green | RFB CNAE (`bot_cnae.py`) | Empresas: resolução semântica de CNAE (k-NN) |
-| `mr_substancias_v001` | 1 | 358 | 358 | 6,7 MB | green | ANM substâncias (`bot_anm` / indexador) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
+| `mr_substancias_v001` | 1 | 358† | 358† | 6,7 MB | green | ANM Cadastro Mineiro `Substancia.txt` (`bot_substancias_anm.py` / `bot_scm`) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
 | `mr_ferrovias_v001` | 2 | 1.865 | 1.865 | 23,5 MB | green | ANTT SHP (`ingest_ferrovias.py`) | Geo: `ferrovias_proximas`, geometria de trecho |
 | `mr_terras_indigenas_v001` | 1 | 657 | 657 | 7,6 MB | green | FUNAI (`bot_funai.py` / `bot_terras_indigenas.py`) | Geo + Jazidas: sobreposição TI |
 | `mr_ucs_v001` | 1 | 2.073 | 2.073 | 15,4 MB | green | IBAMA CNUC (`bot_ucs.py`) | Geo + Jazidas: sobreposição UC |
@@ -57,6 +57,8 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_cvm_listadas_v001` | 2 | — | — | — | **ausente** | CVM cadastro + DFP (`bot_cvm.py`) | Empresas: `buscar_empresa_cvm` — **criar índice + rodar ETL** |
 
 \* `mr_geoquimica_v001`: o `_cat/indices` soma documentos **nested** (`analises[]`); cada amostra tem dezenas de analitos → ~306K segmentos Lucene vs **~20K amostras** reais.
+
+† `mr_substancias_v001`: cluster local ainda com ingestão parcial (358 nomes distintos do SCM). Após `python -m bots.bot_substancias_anm`, esperado **~862** docs da tabela oficial `Substancia.txt`.
 
 ---
 

@@ -22,8 +22,9 @@ geo_shape, geo_point e knn_vector (embeddings semânticos).
 ║ mr_biomas_v001             ║ IBGE biomas              ║ 6 docs       ║
 ║ mr_provincias_v001         ║ SGB/CPRM (derivado)      ║ 8 docs       ║
 ╠═══════════════════════════╬══════════════════════════╬══════════════╣
-║  FASE 2 — Brasil completo                             (10 índices)  ║
+║  FASE 2 — Brasil completo                             (11 índices)  ║
 ╠═══════════════════════════╬══════════════════════════╬══════════════╣
+║ mr_cvm_listadas_v001       ║ CVM cadastro + DFP       ║ ~200–2K docs ║
 ║ mr_cprm_v001               ║ CPRM+USGS MRDS+CMMI      ║ ~80K/~350MB  ║
 ║ mr_geoquimica_v001         ║ CPRM Geoquímica (rocha+  ║ ~65K / ~80MB ║
 ║                            ║ mineral/minério)         ║              ║
@@ -202,13 +203,18 @@ MR_SUBSTANCIAS = {
     "mappings": {
         "properties": {
             "id":               {"type": "integer"},
+            "id_anm":           {"type": "integer"},   # IDSubstancia (Cadastro Mineiro)
             "codigo":           {"type": "keyword"},
             "nome":             _text_kw(),
             "nome_normalizado": {"type": "keyword", "normalizer": "lower_ascii"},
             "grupo":            {"type": "keyword"},
             "categoria":        {"type": "keyword"},   # metálica, não-metálica, energética
+            "categoria_estrategica": {"type": "keyword"},  # terra_rara, litio, ...
             "estrategica":      {"type": "boolean"},   # crítico/estratégico nacional
             "ativo":            {"type": "boolean"},
+            "tipo_uso":         {"type": "keyword"},
+            "tipo_uso_id":      {"type": "integer"},
+            "fonte":            {"type": "keyword"},
             "embedding":        _knn(),
         }
     },
@@ -287,6 +293,60 @@ MR_EMPRESAS = {
             "ultima_autuacao":     _date(),
             "tem_risco_ibama":     {"type": "boolean"},
             "indexed_at":          _date(),
+        }
+    },
+}
+
+# 4b. mr_cvm_listadas_v001
+# Companhias abertas CVM (cad_cia_aberta.csv) filtradas por setor mineral ou
+# cross-ref com mr_jazidas_v001 / mr_empresas_v001. DFP opcional em `financeiro`.
+# Bot: mineral-radar-etl/bots/bot_cvm.py · MCP: buscar_empresa_cvm
+
+MR_CVM_LISTADAS = {
+    "settings": _settings(shards=1, replicas=0),
+    "mappings": {
+        "dynamic": "strict",
+        "properties": {
+            "cnpj_cia":             {"type": "keyword"},
+            "cnpj_basico":          {"type": "keyword"},
+            "cd_cvm":               {"type": "keyword"},
+            "denom_social":         _text_kw(),
+            "denom_comerc":         _text_kw(),
+            "setor_ativ":           {"type": "keyword"},
+            "tp_merc":              {"type": "keyword"},
+            "categ_reg":            {"type": "keyword"},
+            "sit":                  {"type": "keyword"},
+            "sit_emissor":          {"type": "keyword"},
+            "controle_acionario":   {"type": "keyword"},
+            "dt_reg":               _date(),
+            "dt_const":             _date(),
+            "dt_cancel":            _date(),
+            "dt_ini_sit":           _date(),
+            "motivo_cancel":        {"type": "keyword"},
+            "uf":                   {"type": "keyword"},
+            "mun":                  {"type": "keyword"},
+            "pais":                 {"type": "keyword"},
+            "email":                {"type": "keyword", "normalizer": "lower_ascii"},
+            "email_resp":           {"type": "keyword", "normalizer": "lower_ascii"},
+            "resp":                 _text_kw(),
+            "cnpj_auditor":         {"type": "keyword"},
+            "auditor":              {"type": "keyword"},
+            "criterio_inclusao":    {"type": "keyword"},
+            "indexado_em":          _date(),
+            "financeiro": {
+                "properties": {
+                    "ativo_total":          {"type": "double"},
+                    "receita_bruta":        {"type": "double"},
+                    "resultado_bruto":      {"type": "double"},
+                    "lucro_liquido":        {"type": "double"},
+                    "dt_fim_exerc":         _date(),
+                    "consolidado":          {"type": "boolean"},
+                    "ano_dfp":              {"type": "integer"},
+                    "total_acoes_raw":      {"type": "long"},
+                    "acoes_tesouraria_raw": {"type": "long"},
+                    "atualizado_em":        _date(),
+                }
+            },
         }
     },
 }
@@ -920,6 +980,7 @@ ALL_INDICES: dict[str, dict] = {
     "mr_biomas_v001":           {"fase": 1, "body": MR_BIOMAS,             "fonte": "IBGE biomas"},
     "mr_provincias_v001":       {"fase": 1, "body": MR_PROVINCIAS,         "fonte": "SGB/CPRM (derivado)"},
     # ── Fase 2 ──────────────────────────────────────────────────────────
+    "mr_cvm_listadas_v001":     {"fase": 2, "body": MR_CVM_LISTADAS,       "fonte": "CVM Companhias Abertas + DFP"},
     "mr_cprm_v001":             {"fase": 2, "body": MR_CPRM,               "fonte": "CPRM GeoBank"},
     "mr_geoquimica_v001":       {"fase": 2, "body": MR_GEOQUIMICA,         "fonte": "CPRM Geoquímica"},
     "mr_ral_v001":              {"fase": 2, "body": MR_RAL,                "fonte": "ANM RAL produção"},
