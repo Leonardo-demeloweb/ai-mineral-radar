@@ -1,0 +1,52 @@
+# ============================================
+# MineralRadar — API Service
+# ============================================
+# Infra (OpenSearch, MongoDB, Redis) é gerenciada por docker-compose.local.yml
+#
+# Uso (sempre subir a infra primeiro):
+#   docker compose -f docker-compose.local.yml up -d
+#   docker compose up -d
+
+services:
+
+  # ==================== API ====================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mineralradar-api
+    ports:
+      - "8100:8100"
+    env_file:
+      - ../.env
+    environment:
+      - ENVIRONMENT=production
+      # Usa a rede da infra local (mineralradar_local_net) para alcançar mongo, redis e opensearch
+      - MONGODB_URI=mongodb://mongo:27017
+      - MONGODB_DATABASE=mineralradar
+      - MONGODB_USER=admin
+      - MONGODB_PASSWORD=mineralradar_mongo_local
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=mineralradar_redis_local
+      - OPENSEARCH_ENDPOINT=http://opensearch:9200
+      # OpenSearch MCP nativo — acessível pela rede Docker interna
+      - OPENSEARCH_MCP_ENDPOINT=http://opensearch:9200/_plugins/_ml/mcp
+      # Python MCPs rodam no host Mac
+      - MCP_JAZIDAS_URL=http://host.docker.internal:8110/mcp
+      - MCP_EMPRESAS_URL=http://host.docker.internal:8111/mcp
+      - MCP_GEO_URL=http://host.docker.internal:8112/mcp
+    networks:
+      - mineralradar-local-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  mineralradar-local-network:
+    name: mineralradar_local_net
+    external: true

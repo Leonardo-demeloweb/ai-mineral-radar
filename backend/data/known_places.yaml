@@ -1,0 +1,12 @@
+# Pontos nomeados opcionais para rotas (homônimos difíceis para o geocoder).
+# O sistema também resolve portos (CSV/OS) e busca textual em mr_jazidas_v001.
+#
+# Exemplo de entrada:
+#   - keys: ["mina do salobo", "salobo"]
+#     nome: "Mina do Salobo (Vale)"
+#     municipio: "Canaã dos Carajás"
+#     uf: PA
+#     lat: -6.073
+#     lon: -50.186
+
+places: []

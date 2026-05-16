@@ -1,0 +1,69 @@
+# ============================================
+# MineralRadar — Backend Dependencies
+# ============================================
+
+# Core Framework
+fastapi==0.115.6
+starlette==0.41.3              # FastAPI 0.115.x compatibility (pre-1.0 API)
+uvicorn[standard]==0.34.0
+sse-starlette==2.2.1            # Server-Sent Events for streaming chat
+pydantic==2.11.7
+pydantic-settings==2.10.1
+
+# Authentication - Azure AD
+msal==1.31.1
+python-jose[cryptography]==3.3.0
+
+# HTTP Client
+httpx==0.28.1
+aiohttp==3.11.11
+
+# Database Drivers
+motor==3.6.0                    # MongoDB async
+redis[hiredis]==5.2.1           # Redis with C parser
+opensearch-py==2.8.0            # OpenSearch client
+
+# Data Validation & Serialization
+orjson==3.10.13                 # Fast JSON serialization
+python-multipart==0.0.18        # Form data handling
+
+# Observability & Logging
+structlog==24.4.0               # Structured logging
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+
+# Rate Limiting
+slowapi==0.1.9
+
+# Security
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.1
+
+# MCP Servers (Model Context Protocol)
+mcp[cli]==1.26.0
+openai==2.20.0                  # Azure OpenAI for embeddings
+
+# LangGraph Orchestrator (S7+)
+langgraph==1.1.6
+langchain-core==1.2.16
+langchain-openai==1.1.10        # Azure OpenAI ChatModel for LangGraph
+langsmith==0.4.8                # Tracing/observability (ativado via LANGCHAIN_TRACING_V2=true)
+
+# Utilities
+tenacity==9.0.0                 # Retry logic
+cachetools==5.5.0               # In-memory caching
+click==8.1.8                    # CLI para scripts (setup_indices, etc.)
+pyyaml==6.0.2                   # Overrides CKAN (ingest_portos)
+
+# Development
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1                   # For testing
+
+# Geo utilities (para validação de coordenadas)
+geojson==3.2.0
+shapely==2.0.6                  # Polígonos portuários CKAN → mr_portos_v001 (ingest_portos)
+openpyxl==3.1.5                 # Poligonais CKAN em .xlsx (ingest_portos)
+geopandas==0.14.4               # Shapefile malha ferroviária → mr_ferrovias_v001 (ingest_ferrovias)
+fiona==1.9.6                    # I/O shapefile (backend do GeoPandas)

@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MineralRadar ETL — Docker Compose
+# PostgreSQL 16 + PostGIS 3.4  (staging + transformação geoespacial)
+# pgAdmin 4                    (interface web para desenvolvimento)
+# etl-runner                   (container Python para os bots de ingestão)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ──────────────────────────────────────────────────────
+  # PostgreSQL 16 + PostGIS 3.4
+  # ──────────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: mineralradar_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-mineralradar}
+      POSTGRES_USER:     ${POSTGRES_USER:-mineralradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mineralradar_secret}
+      PGDATA:            /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/pgdata
+      # O diretório db/init é copiado para o entrypoint do Postgres.
+      # O script 00_run_migrations.sh lê as migrations de /migrations.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/migrations:/migrations:ro              # lido pelo 00_run_migrations.sh
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mineralradar} -d ${POSTGRES_DB:-mineralradar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - etl_net
+
+  # ──────────────────────────────────────────────────────
+  # pgAdmin 4  (somente para desenvolvimento)
+  # Acesso: http://localhost:5050
+  # ──────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mineralradar_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:-admin@mineralradar.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - dev                            # só sobe com: docker compose --profile dev up
+    networks:
+      - etl_net
+
+  # ──────────────────────────────────────────────────────
+  # ETL Runner — container Python para execução manual dos bots
+  # Uso: docker compose run --rm etl-runner python bots/bot_anm.py
+  # ──────────────────────────────────────────────────────
+  etl-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mineralradar_etl
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mineralradar}:${POSTGRES_PASSWORD:-mineralradar_secret}@postgres:5432/${POSTGRES_DB:-mineralradar}
+      OPENSEARCH_URL:    ${OPENSEARCH_URL:-http://localhost:9200}
+      OPENSEARCH_USER:   ${OPENSEARCH_USER:-admin}
+      OPENSEARCH_PASS:   ${OPENSEARCH_PASS:-admin}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY:      ${AZURE_OPENAI_KEY:-}
+      LOG_LEVEL:         ${LOG_LEVEL:-INFO}
+      ETL_DATA_DIR:      /data
+    volumes:
+      - .:/app                         # monta o código-fonte
+      - etl_data:/data                 # downloads temporários (ZIPs, CSVs)
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - run                            # docker compose --profile run run --rm etl-runner ...
+    networks:
+      - etl_net
+
+volumes:
+  postgres_data:
+    name: mineralradar_postgres_data
+  pgadmin_data:
+    name: mineralradar_pgadmin_data
+  etl_data:
+    name: mineralradar_etl_data
+
+networks:
+  etl_net:
+    name: mineralradar_etl_net
+    driver: bridge

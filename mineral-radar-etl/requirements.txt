@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MineralRadar ETL — dependências Python
+# Python 3.12+
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Banco de dados ───────────────────────────────────────────────────────────
+psycopg[binary,pool]>=3.1.19        # PostgreSQL driver (psycopg3 — asyncio nativo)
+sqlalchemy>=2.0.30                  # ORM / Core para migrações e queries
+
+# ── Geoespacial ──────────────────────────────────────────────────────────────
+geopandas>=0.14.4                   # Shapefile → GeoDataFrame
+fiona>=1.9.6                        # I/O de Shapefiles (backend do GeoPandas)
+shapely>=2.0.5                      # Geometrias vetoriais em Python
+pyproj>=3.6.1                       # Reprojeção de coordenadas (EPSG)
+owslib>=0.31.0                      # Cliente WFS/WMS para CPRM e IBAMA
+
+# ── Processamento de dados ───────────────────────────────────────────────────
+polars>=0.20.31                     # DataFrames ultra-rápidos (CSVs grandes: CFEM, RFB)
+pandas>=2.2.2                       # Fallback para integração com GeoPandas
+pyarrow>=16.1.0                     # Backend Parquet e Arrow (Polars)
+
+# ── HTTP / Downloads ─────────────────────────────────────────────────────────
+httpx[http2]>=0.27.0                # Cliente HTTP assíncrono
+aiofiles>=23.2.1                    # I/O de arquivos assíncrono
+tenacity>=8.3.0                     # Retry automático com backoff exponencial
+
+# ── OpenSearch ───────────────────────────────────────────────────────────────
+opensearch-py>=2.6.0                # Cliente oficial OpenSearch (Apache 2.0)
+
+# ── Embeddings / IA ──────────────────────────────────────────────────────────
+openai>=1.35.0                      # Azure OpenAI (embeddings ada-002)
+
+# ── Utilitários ──────────────────────────────────────────────────────────────
+python-dotenv>=1.0.1                # Leitura do .env
+pydantic>=2.7.4                     # Validação de schema (Pydantic v2)
+pydantic-settings>=2.3.4            # Settings via variáveis de ambiente
+structlog>=24.2.0                   # Logging estruturado JSON
+click>=8.1.7                        # CLI para execução manual dos bots
+tqdm>=4.66.4                        # Barra de progresso para carga bulk
+
+# ── Hashing / integridade ────────────────────────────────────────────────────
+xxhash>=3.4.1                       # Hash rápido para controle de reindexação
+
+# ── Testes ───────────────────────────────────────────────────────────────────
+pytest>=8.2.2
+pytest-asyncio>=0.23.7
+pytest-cov>=5.0.0

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Green rounded square background -->
+  <rect width="32" height="32" rx="6" fill="#16a34a"/>
+  <!--
+    Lucide "Radar" icon paths, original viewBox 0 0 24 24,
+    scaled to fit in 6–26px area: translate(4,4) scale(24/24 * 24/32) → scale(0.75) + translate
+    Using transform="translate(4,4) scale(0.75)"
+  -->
+  <g transform="translate(4,4) scale(0.9167)" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/>
+    <path d="M4 6h.01"/>
+    <path d="M2.29 9.62A10 10 0 1 0 21.31 8.79"/>
+    <path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/>
+    <line x1="12" y1="12" x2="22" y2="2"/>
+    <path d="M12 12l-2.83 8.34a.5.5 0 0 0 .76.56L12 19l2.07 1.9a.5.5 0 0 0 .76-.56Z"/>
+  </g>
+</svg>

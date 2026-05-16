@@ -1,0 +1,22 @@
+# Overrides CKAN — ingestão mr_portos_v001
+# ==========================================
+# O script ingest_portos faz match CSV → recurso CKAN pelo par
+# (município, UF) normalizado. Quando o nome da cidade no portal MTransp
+# difere do município sede em portos_brasil.csv, declare aqui o par
+# cidade + uf tal como aparecem no título do recurso
+# "{Cidade}-{UF} - Trimestral - MM-YYYY".
+#
+# Valores deste ficheiro substituem as entradas embutidas no script
+# para o mesmo codigo. Para acrescentar um código novo, basta adicionar
+# uma chave; não é obrigatório duplicar todos os portos.
+#
+# Opcional: outro pacote CKAN de poligonais (raramente necessário).
+# ckan_package_id: "85954902-5ec2-4432-a6f9-99f3ce77f8d1"
+
+ckan_match:
+  ITQ: { cidade: Itaqui, uf: MA }
+  SUA: { cidade: Suape, uf: PE }
+  ATU: { cidade: Aratu, uf: BA }
+  VDC: { cidade: Vila do Conde, uf: PA }
+  BRR: { cidade: Barra do Riacho, uf: ES }
+  FRN: { cidade: Forno, uf: RJ }

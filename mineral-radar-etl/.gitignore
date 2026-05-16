@@ -1,0 +1,30 @@
+# Ambiente
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Dados temporários de ETL (downloads, ZIPs, CSVs)
+/tmp/
+data/
+*.zip
+*.csv
+*.shp
+*.dbf
+*.shx
+*.prj
+*.cpg
+*.qpj
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker
+*.log

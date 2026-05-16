@@ -1,0 +1,176 @@
+# ============================================
+# MineralRadar — Ambiente Local de Desenvolvimento
+# ============================================
+# Sobe: OpenSearch + MongoDB + Redis (+ UIs opcionais com --profile dev-tools)
+#
+# Uso:
+#   docker compose -f docker-compose.local.yml up -d
+#   docker compose -f docker-compose.local.yml --profile dev-tools up -d  (com UIs)
+#
+# Requisito: vm.max_map_count >= 262144
+#   Linux/macOS (colima/docker desktop): sysctl -w vm.max_map_count=262144
+# ============================================
+
+services:
+
+  # ==================== OpenSearch (single-node dev) ====================
+  opensearch:
+    image: opensearchproject/opensearch:3.6.0
+    container_name: mineralradar-opensearch
+    environment:
+      - cluster.name=mineralradar-local
+      - node.name=mineralradar-node1
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - DISABLE_SECURITY_PLUGIN=true            # sem TLS em dev (≤2.x)
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MineralRadar@local1  # obrigatório em 3.x
+      - plugins.ml_commons.only_run_on_ml_node=false
+      - plugins.ml_commons.native_memory_threshold=99
+      - plugins.ml_commons.mcp_server_enabled=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - mineralradar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ==================== OpenSearch Dashboards (UI) ====================
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:3.6.0
+    container_name: mineralradar-opensearch-ui
+    ports:
+      - "5601:5601"
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - mineralradar-network
+    profiles:
+      - dev-tools
+    restart: unless-stopped
+
+  # ==================== MongoDB ====================
+  mongo:
+    image: mongo:7.0
+    container_name: mineralradar-mongo
+    ports:
+      - "27119:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=mineralradar_mongo_local
+      - MONGO_INITDB_DATABASE=mineralradar
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
+    networks:
+      - mineralradar-network
+    restart: unless-stopped
+    healthcheck:
+      # Root user exige autenticação — ping anônimo falha e o container fica unhealthy.
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "-u",
+          "admin",
+          "-p",
+          "mineralradar_mongo_local",
+          "--authenticationDatabase",
+          "admin",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:7.4-alpine
+    container_name: mineralradar-redis
+    ports:
+      - "6479:6379"
+    command: >
+      redis-server
+      --requirepass mineralradar_redis_local
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - mineralradar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "mineralradar_redis_local", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== Redis Commander (UI) ====================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: mineralradar-redis-ui
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:mineralradar_redis_local
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - mineralradar-network
+    profiles:
+      - dev-tools
+
+  # ==================== Mongo Express (UI) ====================
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mineralradar-mongo-ui
+    ports:
+      - "8082:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=mineralradar_mongo_local
+      - ME_CONFIG_MONGODB_URL=mongodb://admin:mineralradar_mongo_local@mongo:27017/
+      - ME_CONFIG_BASICAUTH=false
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - mineralradar-network
+    profiles:
+      - dev-tools
+
+volumes:
+  opensearch-data:
+    name: mineralradar_opensearch_data
+  mongo-data:
+    name: mineralradar_mongo_data
+  redis-data:
+    name: mineralradar_redis_data
+
+networks:
+  mineralradar-network:
+    name: mineralradar_local_net
+    driver: bridge

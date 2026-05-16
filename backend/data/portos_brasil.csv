@@ -1,0 +1,73 @@
+# MineralRadar — Registry de Portos Organizados Públicos do Brasil
+#
+# Fonte: Ministério dos Transportes (dados.transportes.gov.br) +
+#        curadoria manual das coordenadas de "portão de entrada rodoviária"
+#        (não centroide do polígono, que pode cair no mar)
+#
+# Total: 35 portos organizados públicos federais (lista oficial PNL/MTransp).
+# TUPs (Terminais de Uso Privado) e ETCs ficam para Fase 2 (ver
+# docs/SPEC_PORTOS_OPENSEARCH.md).
+#
+# Schema: separador ';'  — mesmo padrão dos CSVs do dataset CKAN do MTransp.
+# Campos:
+#   codigo                 Identificador interno curto e estável (3-5 chars).
+#   nome                   Nome canônico do porto.
+#   uf                     UF de localização (2 letras).
+#   municipio              Município sede do cais principal.
+#   latitude               Latitude WGS-84 do PORTÃO RODOVIÁRIO (entrada de
+#                          caminhões), não do mar nem do centroide.
+#   longitude              Idem.
+#   endereco               Endereço da administração / portão principal,
+#                          no formato que o Azure Maps consegue rotear.
+#   autoridade_portuaria   Codesp/Codeba/EMAP/etc. — útil para popup do mapa.
+#   cargas_principais      CSV interno (vírgula): granéis sólidos, contêineres,
+#                          granéis líquidos, carga geral, minério de ferro, …
+#                          Usado para rankings tipo "principais portos
+#                          graneleiros do nordeste".
+#   aliases                CSV interno (vírgula) de outros nomes pelos quais
+#                          o porto é conhecido (ex.: "Tecon Santos", "Porto
+#                          de Aratu-Candeias", "Mucuripe"). Usados no fuzzy
+#                          match do registry — vital para resolver consultas
+#                          como "Porto de Mucuripe" → Fortaleza.
+#   validacao_pendente     true se as coordenadas precisam de revisão manual
+#                          (portos menores onde o portão é menos óbvio).
+#                          Itens com este flag DEVEM ser auditados antes de
+#                          dependermos do guardrail para roteamento.
+#
+codigo;nome;uf;municipio;latitude;longitude;endereco;autoridade_portuaria;cargas_principais;aliases;validacao_pendente
+PSV;Porto de Santos;SP;Santos;-23.93333;-46.31250;Av. Conselheiro Rodrigues Alves, s/n, Macuco, Santos/SP;Autoridade Portuária de Santos (APS);contêineres,granéis sólidos,celulose,açúcar;Tecon Santos,Porto de Santos SP;false
+PNG;Porto de Paranaguá;PR;Paranaguá;-25.50194;-48.51389;Av. Ayrton Senna da Silva, 161, Centro, Paranaguá/PR;Portos do Paraná;granéis sólidos,contêineres,grãos,fertilizantes;Porto de Paranaguá PR;false
+ITQ;Porto de Itaqui;MA;São Luís;-2.57833;-44.36556;Av. dos Portugueses, s/n, Itaqui, São Luís/MA;EMAP;granéis sólidos,grãos,combustíveis;Porto do Itaqui,Itaqui MA;false
+SUA;Porto de Suape;PE;Ipojuca;-8.39556;-34.96111;Complexo Industrial Portuário Governador Eraldo Gueiros, Ipojuca/PE;Suape Complexo Industrial Portuário;contêineres,granéis líquidos,combustíveis,carga geral;Complexo de Suape,Porto de Suape PE;false
+VIX;Porto de Vitória;ES;Vitória;-20.31833;-40.34250;Av. Getúlio Vargas, 556, Centro, Vitória/ES;Codesa;granéis sólidos,carga geral,rochas ornamentais;Porto de Vitória ES;false
+RIG;Porto de Rio Grande;RS;Rio Grande;-32.10250;-52.09472;Av. Honório Bicalho, s/n, Rio Grande/RS;Porto do Rio Grande;granéis sólidos,contêineres,grãos,fertilizantes;Porto do Rio Grande,Porto de Rio Grande RS;false
+IGI;Porto de Itaguaí;RJ;Itaguaí;-22.92861;-43.83833;Rod. Rio-Santos (BR-101), km 414, Itaguaí/RJ;Portos do Rio;granéis sólidos,minério de ferro,carvão;Porto de Sepetiba,Itaguai RJ;false
+ATU;Porto de Aratu-Candeias;BA;Candeias;-12.79667;-38.49250;Rod. BA-522, km 9, Aratu, Candeias/BA;Codeba;granéis sólidos,granéis líquidos;Porto de Aratu,Aratu Candeias,Aratu BA;false
+SSA;Porto de Salvador;BA;Salvador;-12.96889;-38.51389;Av. da França, s/n, Comércio, Salvador/BA;Codeba;contêineres,carga geral,granéis sólidos;Porto de Salvador BA,Cais de Salvador;false
+ITJ;Porto de Itajaí;SC;Itajaí;-26.90889;-48.65583;Av. Adolfo Konder, 1025, Centro, Itajaí/SC;Superintendência do Porto de Itajaí;contêineres,carga geral;Porto de Itajai SC;false
+ATN;Porto de Antonina;PR;Antonina;-25.42889;-48.71389;Rua XV de Novembro, 100, Centro, Antonina/PR;Portos do Paraná;granéis sólidos,carga geral;Porto de Antonina PR,Terminal Ponta do Félix;false
+SFS;Porto de São Francisco do Sul;SC;São Francisco do Sul;-26.24028;-48.63972;Rua Babitonga, 65, Centro, São Francisco do Sul/SC;APSFS;granéis sólidos,contêineres,grãos;Porto de Sao Francisco do Sul,Porto de São Francisco do Sul SC;false
+IMB;Porto de Imbituba;SC;Imbituba;-28.23083;-48.65389;Av. Paulo Mehe, s/n, Centro, Imbituba/SC;SCPar Porto de Imbituba;granéis sólidos,carga geral,carvão;Porto de Imbituba SC;false
+LAG;Porto de Laguna;SC;Laguna;-28.49222;-48.78361;Praia da Tereza, s/n, Laguna/SC;SCPar;carga geral,pesca;Porto de Laguna SC;true
+PEL;Porto de Pelotas;RS;Pelotas;-31.74889;-52.31417;Av. Bento Gonçalves, s/n, Cais do Porto, Pelotas/RS;Portos RS;carga geral,granéis sólidos;Porto de Pelotas RS;true
+POA;Porto de Porto Alegre;RS;Porto Alegre;-30.02639;-51.22667;Av. Mauá, 1050, Centro Histórico, Porto Alegre/RS;Portos RS;contêineres,carga geral,granéis sólidos;Porto de Porto Alegre RS;false
+CAB;Porto de Cabedelo;PB;Cabedelo;-6.97694;-34.83472;BR-230, km 30, Cabedelo/PB;Docas-PB;granéis líquidos,combustíveis,granéis sólidos;Porto de Cabedelo PB;false
+REC;Porto de Recife;PE;Recife;-8.06250;-34.87139;Av. Alfredo Lisboa, s/n, Recife Antigo, Recife/PE;Porto do Recife S.A.;contêineres,carga geral,granéis sólidos;Porto do Recife,Porto de Recife PE;false
+MCZ;Porto de Maceió;AL;Maceió;-9.66472;-35.72944;Av. Eng. Mário de Gusmão, Jaraguá, Maceió/AL;Codeal;granéis líquidos,açúcar,combustíveis;Porto de Maceio,Porto de Maceió AL;false
+PPR;Porto de Propriá;SE;Propriá;-10.2189;-36.8444;Av. Presidente Vargas, s/n, Propriá/SE;Administração Hidroviária do Nordeste (AHNOR);granéis sólidos,carga geral;Porto de Sergipe,Porto de Propriá SE,Porto SE;true
+ILH;Porto de Ilhéus;BA;Ilhéus;-14.79750;-39.04111;Av. Soares Lopes, s/n, Centro, Ilhéus/BA;Codeba;granéis sólidos,carga geral,cacau;Porto de Ilheus,Porto de Ilhéus BA;false
+FOR;Porto de Fortaleza (Mucuripe);CE;Fortaleza;-3.71250;-38.48861;Av. Vicente de Castro, 4900, Mucuripe, Fortaleza/CE;Companhia Docas do Ceará;granéis sólidos,contêineres,combustíveis;Porto de Fortaleza,Mucuripe,Porto do Mucuripe;false
+ABR;Porto de Areia Branca (Terminal Salineiro);RN;Areia Branca;-4.96472;-37.13750;Av. Pres. Castelo Branco, s/n, Areia Branca/RN;Codern;sal,granéis sólidos;Terminal Salineiro,Porto de Areia Branca RN;true
+NAT;Porto de Natal;RN;Natal;-5.76639;-35.20583;Av. Eng. Hildebrando de Góis, 220, Ribeira, Natal/RN;Codern;contêineres,carga geral,frutas;Porto de Natal RN;false
+BEL;Porto de Belém;PA;Belém;-1.45333;-48.50500;Av. Marechal Hermes, s/n, Centro, Belém/PA;Companhia Docas do Pará;contêineres,carga geral,granéis sólidos;Porto de Belem,Porto de Belém PA;false
+VDC;Porto de Vila do Conde;PA;Barcarena;-1.54833;-48.74917;Vila do Conde, s/n, Barcarena/PA;Companhia Docas do Pará;granéis sólidos,bauxita,alumínio,grãos;Porto de Vila do Conde,Vila do Conde PA;false
+STM;Porto de Santarém;PA;Santarém;-2.43000;-54.71667;Av. Tapajós, 2267, Santarém/PA;Companhia Docas do Pará;grãos,granéis sólidos,carga geral;Porto de Santarem,Porto de Santarém PA;false
+MAO;Porto de Manaus;AM;Manaus;-3.13917;-60.02833;Rua Marquês de Santa Cruz, 25, Centro, Manaus/AM;Sociedade de Navegação Porto e Hidrovias;contêineres,carga geral,granéis líquidos;Porto de Manaus AM;false
+PVH;Porto de Porto Velho;RO;Porto Velho;-8.74944;-63.90139;Av. Pinheiro Machado, 4115, Porto Velho/RO;SOPH;grãos,combustíveis,granéis sólidos;Porto de Porto Velho RO,Porto Graneleiro de Porto Velho;false
+SNA;Porto de Santana;AP;Santana;0.06000;-51.18000;Av. Atlântica, s/n, Centro, Santana/AP;CDSA;manganês,granéis sólidos,carga geral;Porto de Santana,Porto de Santana AP;true
+RIO;Porto do Rio de Janeiro;RJ;Rio de Janeiro;-22.89694;-43.18861;Av. Rodrigues Alves, 20, Centro, Rio de Janeiro/RJ;Portos do Rio;contêineres,carga geral,granéis sólidos;Porto do Rio,Porto de Rio de Janeiro;false
+NIT;Porto de Niterói;RJ;Niterói;-22.89472;-43.13278;Av. Visconde do Rio Branco, s/n, Centro, Niterói/RJ;Portos do Rio;carga geral,offshore;Porto de Niteroi,Porto de Niterói RJ;true
+FRN;Porto do Forno;RJ;Arraial do Cabo;-22.97389;-42.01528;Praça Daniel Barreto, s/n, Centro, Arraial do Cabo/RJ;Companhia de Docas do Rio de Janeiro;granéis sólidos,sal,carga geral;Porto de Arraial do Cabo,Porto do Forno RJ;true
+ANG;Porto de Angra dos Reis;RJ;Angra dos Reis;-23.00667;-44.31833;Av. Júlio Maria, s/n, Centro, Angra dos Reis/RJ;Portos do Rio;minério de ferro,granéis sólidos,carga geral;Porto de Angra,Porto de Angra dos Reis RJ;true
+BRR;Porto de Barra do Riacho (Portocel);ES;Aracruz;-19.84222;-40.06667;Rod. Aracruz-Barra do Riacho, km 7, Barra do Riacho, Aracruz/ES;Portocel;celulose,carga geral;Portocel,Porto de Barra do Riacho ES;false
+SBS;Porto de São Sebastião;SP;São Sebastião;-23.81000;-45.39250;Av. Dr. Altino Arantes, 480, Centro, São Sebastião/SP;Companhia Docas de São Sebastião;granéis líquidos,combustíveis,carga geral;Porto de Sao Sebastiao,Porto de São Sebastião SP;false
