@@ -13,7 +13,7 @@ Resolution strategy (ordered):
     5. If still nothing → BM25 on mr_tipo_uso_v001
 
 Indices used:
-    - mr_substancias_v001: 358 docs (nome, nome_normalizado, tipo_uso, embedding ✓)
+    - mr_substancias_v001: 862 docs (catálogo oficial ANM; nome, nome_normalizado, tipo_uso, embedding ✓)
     - mr_tipo_uso_v001:     26 docs (descricao, grupo, categoria, embedding ✓)
 
 Result fields used in mr_jazidas_v001 filter:
@@ -40,7 +40,7 @@ INDEX_SUBSTANCIA = "mr_substancias_v001"
 INDEX_TIPO_USO = "mr_tipo_uso_v001"
 
 # Thresholds
-KNN_MIN_SCORE_SUBSTANCIA = 0.82   # mr_substancias_v001 (358 docs) — higher bar
+KNN_MIN_SCORE_SUBSTANCIA = 0.82   # mr_substancias_v001 (862 docs) — higher bar
 KNN_MIN_SCORE_TIPO_USO   = 0.72   # mr_tipo_uso_v001 (26 docs) — lower bar (small corpus)
 KNN_MIN_SCORE = KNN_MIN_SCORE_SUBSTANCIA   # backwards compat alias
 MATCH_MIN_SCORE = 1.0          # Minimum BM25 score to consider a match

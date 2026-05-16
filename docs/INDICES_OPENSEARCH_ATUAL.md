@@ -43,7 +43,7 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_sicar_v001` | 2 | 56.134 | 56.134 | 35,9 MB | yellow | INCRA CAR (`bot_sicar.py`) | Geo: CAR / imóveis rurais (amostra parcial no dev) |
 | `mr_municipios_v001` | 1 | 5.572 | 5.572 | 227,1 MB | green | IBGE (`bot_municipios.py`) | Geo: município por nome/coordenada, `geo_shape` |
 | `mr_cnae_v001` | 1 | 1.359 | 1.359 | 16,3 MB | green | RFB CNAE (`bot_cnae.py`) | Empresas: resolução semântica de CNAE (k-NN) |
-| `mr_substancias_v001` | 1 | 358† | 358† | 6,7 MB | green | ANM Cadastro Mineiro `Substancia.txt` (`bot_substancias_anm.py` / `bot_scm`) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
+| `mr_substancias_v001` | 1 | 862 | 862 | ~16 MB | green | ANM `Substancia.txt` (`bot_substancias_anm.py`) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
 | `mr_ferrovias_v001` | 2 | 1.865 | 1.865 | 23,5 MB | green | ANTT SHP (`ingest_ferrovias.py`) | Geo: `ferrovias_proximas`, geometria de trecho |
 | `mr_terras_indigenas_v001` | 1 | 657 | 657 | 7,6 MB | green | FUNAI (`bot_funai.py` / `bot_terras_indigenas.py`) | Geo + Jazidas: sobreposição TI |
 | `mr_ucs_v001` | 1 | 2.073 | 2.073 | 15,4 MB | green | IBAMA CNUC (`bot_ucs.py`) | Geo + Jazidas: sobreposição UC |
@@ -58,8 +58,6 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 
 \* `mr_geoquimica_v001`: o `_cat/indices` soma documentos **nested** (`analises[]`); cada amostra tem dezenas de analitos → ~306K segmentos Lucene vs **~20K amostras** reais.
 
-† `mr_substancias_v001`: cluster local ainda com ingestão parcial (358 nomes distintos do SCM). Após `python -m bots.bot_substancias_anm`, esperado **~862** docs da tabela oficial `Substancia.txt`.
-
 ---
 
 ## Cobertura geográfica atual (dev local)
@@ -69,6 +67,7 @@ O cluster local **não replica o Brasil inteiro** em todos os índices. Destaque
 | Índice | Cobertura observada |
 |--------|---------------------|
 | `mr_jazidas_v001` | ~907K processos (subconjunto ANM; meta produção ~25M ativos+inativos) |
+| `mr_substancias_v001` | **862** substâncias — catálogo oficial ANM (`IDSubstancia` + `NMSubstancia`); `_id` = `id_anm` |
 | `mr_geoquimica_v001` | Envelope BR: lat **+4,13°** a **−32,40°**, lon **−69,82°** a **−36,02°**; **~20K amostras** indexadas (OGC prevê ~65K) |
 | `mr_geoquimica_v001` | **0 amostras** em raio 50 km de Carajás (PA) e 25 km de Paraíso (MG) — lacuna de dados na subárea indexada, não falha de query |
 | `mr_ferrovias_v001` | Geometria presente (1.865 trechos), mas campo `nome`/`codigo_sigla` com **hashes** do ingest — busca textual por "Norte-Sul" retorna **0 hits** |
@@ -179,10 +178,22 @@ Critérios de inclusão no ETL (`bot_cvm.py`): setor mineral na CVM **OU** CNPJ 
 
 | Índice | Docs | k-NN |
 |--------|------|------|
-| `mr_substancias_v001` | 358 | `embedding` dim 1536, HNSW faiss |
+| `mr_substancias_v001` | **862** | `embedding` dim 1536, HNSW faiss |
 | `mr_tipo_uso_v001` | 26 | idem |
 
-Fluxo híbrido (`substancia.py`): uso semântico → k-NN/BM25 nos catálogos → filtro em `mr_jazidas_v001` por `substancias_desc.keyword` ou uso.
+**`mr_substancias_v001` — catálogo oficial ANM**
+
+| | |
+|--|--|
+| **Volume (cluster local)** | 862 documentos |
+| **Fonte** | `microdados-scm.zip` → `microdados-scm/Substancia.txt` (Cadastro Mineiro ANM) |
+| **ETL** | `python -m bots.bot_substancias_anm` (limpa o índice e reindexa; use `--skip-download` se o ZIP já existir) |
+| **Integração** | `bot_scm --only substancias` usa a mesma tabela oficial quando o ZIP está em `~/.mineralradar/data/scm/` |
+| **`_id` OpenSearch** | `id_anm` (`IDSubstancia`) — não usar mais `_id` = nome UPPER do ingest SCM legado |
+| **Campos** | `id_anm`, `nome`, `nome_normalizado`, `tipo_uso` (merge SCM), `categoria_estrategica`, `embedding`, `fonte` |
+| **Filtro em jazidas** | `SubstanciaResolver` → `nome_normalizado` → `mr_jazidas_v001.substancias_desc.keyword` |
+
+Fluxo híbrido (`substancia.py`): uso semântico → k-NN/BM25 nos catálogos → filtro em `mr_jazidas_v001` por `substancias_desc.keyword` ou `uso_substancia`.
 
 ---
 
@@ -327,6 +338,10 @@ python -m scripts.setup_indices --list
 python -m scripts.setup_indices --index mr_autuacoes_v001
 python -m scripts.setup_indices --index mr_cvm_listadas_v001
 
+# Catálogo oficial de substâncias ANM (~862) — mineral-radar-etl/
+python -m bots.bot_substancias_anm
+python -m bots.bot_substancias_anm --skip-download   # ZIP já em ~/.mineralradar/data/scm/
+
 # ETL CVM (a partir de mineral-radar-etl/)
 python -m bots.bot_cvm --all
 
@@ -358,3 +373,4 @@ curl -s 'http://localhost:9200/_cat/indices/mr_geoquimica_v001?v'
 | Data | Alteração |
 |------|-----------|
 | 2026-05-16 | Documento criado: índices `mr_*`, snapshot `mineralradar-local`, lacunas e notas operacionais |
+| 2026-05-16 | `mr_substancias_v001` atualizado para 862 docs (catálogo oficial ANM via `bot_substancias_anm`) |
