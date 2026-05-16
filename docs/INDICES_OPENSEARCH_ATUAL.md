@@ -20,10 +20,10 @@ Este arquivo descreve o **cenário real do cluster de desenvolvimento local** em
 | Métrica | Valor (cluster local) |
 |--------|------------------------|
 | Índices `mr_*` definidos | **22** (`setup_indices.py`) |
-| Índices presentes | **20** |
-| Índices ausentes | **2** (`mr_autuacoes_v001`, `mr_cvm_listadas_v001`) |
+| Índices presentes | **21** |
+| Índices ausentes | **1** (`mr_cvm_listadas_v001`) |
 | Índices vazios (0 docs raiz) | **1** (`mr_ral_v001`) |
-| Documentos raiz (estimativa) | **~5,84 milhões** |
+| Documentos raiz (estimativa) | **~5,90 milhões** |
 | Armazenamento primário | **~3,5 GB** |
 | Status cluster | **green** (nó único); alguns índices **yellow** (réplica 0 em cluster single-node) |
 
@@ -40,6 +40,7 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_cprm_v001` | 2 | 36.472 | 36.472 | 165,5 MB | green | CPRM GeoBank (`bot_cprm.py`) | Jazidas: ocorrências, enriquecimento `n_ocorrencias_cprm` |
 | `mr_mercado_v001` | 2 | 66.771 | 66.771 | 24,9 MB | green | ComexStat / AMB (`bot_mercado.py`) | Jazidas: séries de mercado / NCM |
 | `mr_empresas_v001` | 1 | 43.622 | 43.622 | 29,2 MB | green | RFB CNPJ filtrado (`bot_empresas.py`) | Empresas + enriquecimento titular em jazidas |
+| `mr_autuacoes_v001` | 2 | 55.043 | 55.043 | ~45 MB | green | IBAMA SIFISC (`bot_autuacoes.py`) | Empresas: `risco_ambiental_empresa`, `autuacoes_por_area` |
 | `mr_sicar_v001` | 2 | 56.134 | 56.134 | 35,9 MB | yellow | INCRA CAR (`bot_sicar.py`) | Geo: CAR / imóveis rurais (amostra parcial no dev) |
 | `mr_municipios_v001` | 1 | 5.572 | 5.572 | 227,1 MB | green | IBGE (`bot_municipios.py`) | Geo: município por nome/coordenada, `geo_shape` |
 | `mr_cnae_v001` | 1 | 1.359 | 1.359 | 16,3 MB | green | RFB CNAE (`bot_cnae.py`) | Empresas: resolução semântica de CNAE (k-NN) |
@@ -53,7 +54,6 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_provincias_v001` | 1 | 8 | 8 | 31,1 KB | green | Derivado CPRM (`bot_provincias.py`) | Contexto geológico regional |
 | `mr_monitoring_v001` | 2 | 38 | 38 | 107 KB | yellow | DOU / eventos (`bot_monitoring.py`) | Alertas / monitoramento (piloto) |
 | `mr_ral_v001` | 2 | 0 | 0 | 208 B | green | ANM RAL (`bot_mercado` / futuro `bot_ral`) | Produção anual — **índice criado, sem ingestão** |
-| `mr_autuacoes_v001` | 2 | — | — | — | **ausente** | IBAMA SIFISC (`bot_autuacoes.py`) | Empresas: risco ambiental — **índice não criado no cluster** |
 | `mr_cvm_listadas_v001` | 2 | — | — | — | **ausente** | CVM cadastro + DFP (`bot_cvm.py`) | Empresas: `buscar_empresa_cvm` — **criar índice + rodar ETL** |
 
 \* `mr_geoquimica_v001`: o `_cat/indices` soma documentos **nested** (`analises[]`); cada amostra tem dezenas de analitos → ~306K segmentos Lucene vs **~20K amostras** reais.
@@ -73,6 +73,7 @@ O cluster local **não replica o Brasil inteiro** em todos os índices. Destaque
 | `mr_ferrovias_v001` | Geometria presente (1.865 trechos), mas campo `nome`/`codigo_sigla` com **hashes** do ingest — busca textual por "Norte-Sul" retorna **0 hits** |
 | `mr_portos_v001` | 36 portos curados (Santos, Paranaguá, Itaqui, etc.) |
 | `mr_sicar_v001` | ~56K imóveis (dev parcial; produção prevista ~6,8M) |
+| `mr_autuacoes_v001` | **55.043** infrações (filtro domínio mineral); Autuação ~36K · Apreensão ~13K · Embargo ~6K |
 
 ---
 
@@ -303,12 +304,28 @@ Usados em sobreposição com processos (`verificar_restricoes` / enriquecimento 
 
 ---
 
+### `mr_autuacoes_v001` — Autuações, embargos e apreensões (IBAMA SIFISC)
+
+| | |
+|--|--|
+| **Volume (cluster local)** | 55.043 documentos (após filtro mineral; SIFISC bruto ~milhões) |
+| **Composição** | Autuacao ~36.331 · Apreensao ~12.785 · Embargo ~5.927 |
+| **Fontes** | `dadosabertos.ibama.gov.br` — ZIPs: auto de infração, termo de embargo, termo de apreensão |
+| **ETL** | `python -m bots.bot_autuacoes --all` (download + index + enrich `mr_empresas_v001`) |
+| **Filtro** | CNPJ em `mr_empresas_v001` ∪ titulares `mr_jazidas_v001`, **ou** texto com keywords minerais |
+| **Geo** | `location` (geo_point); embargos podem ter `area_ha` |
+| **Join** | `cnpj_basico` → `mr_empresas_v001`; agregados `n_autuacoes`, `tem_risco_ibama` via `--enrich-empresas` |
+| **MCP** | `risco_ambiental_empresa`, `autuacoes_por_area` (`mcp_servers/empresas/queries/autuacoes.py`) |
+
+Cache local dos ZIPs: `~/.mineralradar/data/autuacoes/` (ou `ETL_DATA_DIR/autuacoes`).
+
+---
+
 ### Pendentes no cluster local
 
 | Índice | Situação | Próximo passo |
 |--------|----------|---------------|
 | `mr_ral_v001` | Criado, **0 docs** | Rodar ingest RAL/AMB |
-| `mr_autuacoes_v001` | **Não criado** | `python -m scripts.setup_indices --index mr_autuacoes_v001` + `bot_autuacoes.py` |
 | `mr_cvm_listadas_v001` | **Não criado** | `python -m scripts.setup_indices --index mr_cvm_listadas_v001` + `python -m bots.bot_cvm --all` |
 
 ---
@@ -335,8 +352,11 @@ cd backend && source ../.env && source .venv/bin/activate
 python -m scripts.setup_indices --list
 
 # Criar índice ausente
-python -m scripts.setup_indices --index mr_autuacoes_v001
 python -m scripts.setup_indices --index mr_cvm_listadas_v001
+
+# IBAMA autuações (~55K docs filtrados mineral) — mineral-radar-etl/
+python -m bots.bot_autuacoes --all
+python -m bots.bot_autuacoes --all --skip-download   # reindex com ZIPs em cache
 
 # Catálogo oficial de substâncias ANM (~862) — mineral-radar-etl/
 python -m bots.bot_substancias_anm
@@ -374,3 +394,4 @@ curl -s 'http://localhost:9200/_cat/indices/mr_geoquimica_v001?v'
 |------|-----------|
 | 2026-05-16 | Documento criado: índices `mr_*`, snapshot `mineralradar-local`, lacunas e notas operacionais |
 | 2026-05-16 | `mr_substancias_v001` atualizado para 862 docs (catálogo oficial ANM via `bot_substancias_anm`) |
+| 2026-05-16 | `mr_autuacoes_v001` indexado (55.043 docs IBAMA SIFISC via `bot_autuacoes.py`) |

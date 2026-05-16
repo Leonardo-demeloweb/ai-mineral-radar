@@ -142,6 +142,7 @@ python -m bots.bot_anm --uf AC
 | `bot_anm` | `dadosabertos.anm.gov.br/SIGMINE/` | Diária |
 | `bot_cfem` | `dadosabertos.anm.gov.br/CFEM/` | Diária |
 | `bot_substancias_anm` | `dadosabertos.anm.gov.br/SCM/microdados/microdados-scm.zip` → `Substancia.txt` | Diária |
+| `bot_autuacoes` | `dadosabertos.ibama.gov.br` SIFISC (auto infração + embargo + apreensão) → `mr_autuacoes_v001` | Mensal |
 | `bot_scm` | `dadosabertos.anm.gov.br/SCM/` (tipo_uso + substâncias; usa catálogo oficial se ZIP existir) | Diária |
 | `bot_funai` | `gov.br/funai` (WFS) | Mensal |
 | `bot_ibama` | `dados.mma.gov.br` (CNUC) | Mensal |

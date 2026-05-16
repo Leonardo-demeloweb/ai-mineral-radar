@@ -14,7 +14,7 @@ Queries para ``mr_autuacoes_v001`` expostas em dois contextos:
        jazida ou empreendimento).
 
 Índices:
-    - mr_autuacoes_v001  (55k docs — autuações, embargos, apreensões IBAMA)
+    - mr_autuacoes_v001  (~55k docs — autuações, embargos, apreensões IBAMA, filtro mineral)
     - mr_empresas_v001   (43k docs — contém resumo pré-agregado por cnpj_basico)
 
 Performance esperada:
