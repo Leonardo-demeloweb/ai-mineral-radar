@@ -20,12 +20,14 @@ Este arquivo descreve o **cenário real do cluster de desenvolvimento local** em
 | Métrica | Valor (cluster local) |
 |--------|------------------------|
 | Índices `mr_*` definidos | **22** (`setup_indices.py`) |
-| Índices presentes | **21** |
-| Índices ausentes | **1** (`mr_cvm_listadas_v001`) |
+| Índices canônicos presentes | **22** / 22 |
+| Índices ausentes | **0** |
 | Índices vazios (0 docs raiz) | **1** (`mr_ral_v001`) |
-| Documentos raiz (estimativa) | **~5,90 milhões** |
-| Armazenamento primário | **~3,5 GB** |
-| Status cluster | **green** (nó único); alguns índices **yellow** (réplica 0 em cluster single-node) |
+| Documentos raiz (soma canônicos) | **~5,91 milhões** |
+| Armazenamento primário (`mr_*`) | **~3,8 GB** |
+| Status cluster | **yellow** (nó único, 8 shards não atribuídos); índices `mr_sigef_v001`, `mr_sicar_v001`, `mr_monitoring_v001` também **yellow** |
+
+> **Autuações IBAMA:** índice canônico `mr_autuacoes_v001` com **55.043** docs (migrado de `mr_autoacoes_v001` em 16/05/2026). ETL/MCP usam o mesmo nome.
 
 ### Tabela consolidada — todos os índices `mr_*`
 
@@ -36,15 +38,16 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_jazidas_v001` | 1 | 906.780 | 906.780 | 1,5 GB | green | ANM SIGMINE + SCM + SICOP | Jazidas: `buscar_jazidas`, detalhes, vigência, disponibilidades |
 | `mr_cfem_v001` | 1 | 3.289.871 | 3.289.871 | 691 MB | green | ANM CFEM (`bot_cfem.py`) | Jazidas: CFEM, ranking arrecadação |
 | `mr_sigef_v001` | 2 | 1.411.595 | 1.411.595 | 1,0 GB | yellow | INCRA SIGEF (`bot_sigef.py`) | Geo: sobreposição imóveis rurais |
-| `mr_geoquimica_v001` | 2 | 305.955* | **20.342** | 13,3 MB | green | CPRM OGC API (`bot_geoquimica.py`) | Jazidas: `geoquimica_proxima`, `geoquimica_detalhes_amostra` |
+| `mr_geoquimica_v001` | 2 | ~1,16M* | **77.180** | ~68 MB | green | CPRM OGC API (`bot_geoquimica.py`) | Jazidas: `geoquimica_proxima`, `geoquimica_detalhes_amostra` |
 | `mr_cprm_v001` | 2 | 36.472 | 36.472 | 165,5 MB | green | CPRM GeoBank (`bot_cprm.py`) | Jazidas: ocorrências, enriquecimento `n_ocorrencias_cprm` |
 | `mr_mercado_v001` | 2 | 66.771 | 66.771 | 24,9 MB | green | ComexStat / AMB (`bot_mercado.py`) | Jazidas: séries de mercado / NCM |
-| `mr_empresas_v001` | 1 | 43.622 | 43.622 | 29,2 MB | green | RFB CNPJ filtrado (`bot_empresas.py`) | Empresas + enriquecimento titular em jazidas |
-| `mr_autuacoes_v001` | 2 | 55.043 | 55.043 | ~45 MB | green | IBAMA SIFISC (`bot_autuacoes.py`) | Empresas: `risco_ambiental_empresa`, `autuacoes_por_area` |
+| `mr_empresas_v001` | 1 | 43.622 | 43.622 | 33,4 MB | green | RFB CNPJ filtrado (`bot_empresas.py`) | Empresas + enriquecimento titular em jazidas |
+| `mr_autuacoes_v001` | 2 | 55.043 | 55.043 | ~30 MB | green | IBAMA SIFISC (`bot_autuacoes.py`) | Empresas: `risco_ambiental_empresa`, `autuacoes_por_area` |
+| `mr_cvm_listadas_v001` | 2 | 367 | 367 | 265,7 KB | green | CVM cadastro + DFP (`bot_cvm.py`) | Empresas: `buscar_empresa_cvm` |
 | `mr_sicar_v001` | 2 | 56.134 | 56.134 | 35,9 MB | yellow | INCRA CAR (`bot_sicar.py`) | Geo: CAR / imóveis rurais (amostra parcial no dev) |
 | `mr_municipios_v001` | 1 | 5.572 | 5.572 | 227,1 MB | green | IBGE (`bot_municipios.py`) | Geo: município por nome/coordenada, `geo_shape` |
 | `mr_cnae_v001` | 1 | 1.359 | 1.359 | 16,3 MB | green | RFB CNAE (`bot_cnae.py`) | Empresas: resolução semântica de CNAE (k-NN) |
-| `mr_substancias_v001` | 1 | 862 | 862 | ~16 MB | green | ANM `Substancia.txt` (`bot_substancias_anm.py`) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
+| `mr_substancias_v001` | 1 | 862 | 862 | 20,8 MB | green | ANM `Substancia.txt` (`bot_substancias_anm.py`) | Jazidas: `SubstanciaResolver` (k-NN + BM25) |
 | `mr_ferrovias_v001` | 2 | 1.865 | 1.865 | 23,5 MB | green | ANTT SHP (`ingest_ferrovias.py`) | Geo: `ferrovias_proximas`, geometria de trecho |
 | `mr_terras_indigenas_v001` | 1 | 657 | 657 | 7,6 MB | green | FUNAI (`bot_funai.py` / `bot_terras_indigenas.py`) | Geo + Jazidas: sobreposição TI |
 | `mr_ucs_v001` | 1 | 2.073 | 2.073 | 15,4 MB | green | IBAMA CNUC (`bot_ucs.py`) | Geo + Jazidas: sobreposição UC |
@@ -54,9 +57,8 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 | `mr_provincias_v001` | 1 | 8 | 8 | 31,1 KB | green | Derivado CPRM (`bot_provincias.py`) | Contexto geológico regional |
 | `mr_monitoring_v001` | 2 | 38 | 38 | 107 KB | yellow | DOU / eventos (`bot_monitoring.py`) | Alertas / monitoramento (piloto) |
 | `mr_ral_v001` | 2 | 0 | 0 | 208 B | green | ANM RAL (`bot_mercado` / futuro `bot_ral`) | Produção anual — **índice criado, sem ingestão** |
-| `mr_cvm_listadas_v001` | 2 | — | — | — | **ausente** | CVM cadastro + DFP (`bot_cvm.py`) | Empresas: `buscar_empresa_cvm` — **criar índice + rodar ETL** |
 
-\* `mr_geoquimica_v001`: o `_cat/indices` soma documentos **nested** (`analises[]`); cada amostra tem dezenas de analitos → ~306K segmentos Lucene vs **~20K amostras** reais.
+\* `mr_geoquimica_v001`: **DOCS(cat)** ≈ raiz × ~15 (filhos **nested** `analises[]`). **DOCS(raiz)** = features OGC (`_count`); usar sempre raiz. `_id` = `GEO:{colecao}:{ogc_feature_id}`.
 
 ---
 
@@ -68,12 +70,13 @@ O cluster local **não replica o Brasil inteiro** em todos os índices. Destaque
 |--------|---------------------|
 | `mr_jazidas_v001` | ~907K processos (subconjunto ANM; meta produção ~25M ativos+inativos) |
 | `mr_substancias_v001` | **862** substâncias — catálogo oficial ANM (`IDSubstancia` + `NMSubstancia`); `_id` = `id_anm` |
-| `mr_geoquimica_v001` | Envelope BR: lat **+4,13°** a **−32,40°**, lon **−69,82°** a **−36,02°**; **~20K amostras** indexadas (OGC prevê ~65K) |
-| `mr_geoquimica_v001` | **0 amostras** em raio 50 km de Carajás (PA) e 25 km de Paraíso (MG) — lacuna de dados na subárea indexada, não falha de query |
+| `mr_geoquimica_v001` | **77.180** features OGC indexadas (72.975 rocha + 4.205 mineral); ~22,5K `numero_de_campo` distintos (várias análises por campo) |
+| `mr_geoquimica_v001` | Revalidar cobertura Carajás/Paraíso com `validate_opensearch_cluster.py` após ingest completo |
 | `mr_ferrovias_v001` | Geometria presente (1.865 trechos), mas campo `nome`/`codigo_sigla` com **hashes** do ingest — busca textual por "Norte-Sul" retorna **0 hits** |
 | `mr_portos_v001` | 36 portos curados (Santos, Paranaguá, Itaqui, etc.) |
 | `mr_sicar_v001` | ~56K imóveis (dev parcial; produção prevista ~6,8M) |
 | `mr_autuacoes_v001` | **55.043** infrações (filtro domínio mineral); Autuação ~36K · Apreensão ~13K · Embargo ~6K |
+| `mr_cvm_listadas_v001` | **367** companhias (setor mineral + cross-ref jazidas/empresas) |
 
 ---
 
@@ -152,10 +155,10 @@ Campos críticos: `numero_processo`, `ativo`, `fase`, `situacao`, `substancias`,
 
 | | |
 |--|--|
-| **Volume local** | 43.622 docs · 29,2 MB (filtro: titular ANM, CNAE mineração, top CFEM) |
+| **Volume local** | 43.622 docs · 33,4 MB (filtro: titular ANM, CNAE mineração, top CFEM) |
 | **Geo** | `location` (geo_point) |
 | **Sócios** | Arrays flat: `socios_cpf_cnpj[]`, `socios_nomes[]` (sem nested) |
-| **Risco IBAMA** | Campos `n_autuacoes`, `tem_risco_ibama` — preenchidos quando `mr_autuacoes_v001` existir |
+| **Risco IBAMA** | Campos `n_autuacoes`, `tem_risco_ibama` — enriquecidos por `bot_autuacoes --enrich-empresas` |
 
 ---
 
@@ -163,11 +166,10 @@ Campos críticos: `numero_processo`, `ativo`, `fase`, `situacao`, `substancias`,
 
 | | |
 |--|--|
-| **Volume esperado** | ~200–2.000 docs (filtro setor mineral + cross-ref jazidas/empresas) |
+| **Volume (cluster local)** | **367** docs · 265,7 KB |
 | **Fonte** | `dados.cvm.gov.br` — `cad_cia_aberta.csv`; DFP anual opcional |
 | **Campos** | `cnpj_cia`, `cnpj_basico`, `cd_cvm`, `denom_social`, `tp_merc`, `sit`, `setor_ativ`, `financeiro.*` |
 | **ETL** | `python -m bots.bot_cvm --all` (download → index → enrich-jazidas → enrich-dfp) |
-| **Criação índice** | `python -m scripts.setup_indices --index mr_cvm_listadas_v001` |
 | **MCP** | `buscar_empresa_cvm`; enriquecimento em `detalhes_empresa` via `cnpj_basico` |
 | **Join** | `cnpj_basico` → `mr_empresas_v001` / `mr_jazidas_v001.titular.cnpj_basico` |
 
@@ -223,12 +225,17 @@ Fluxo híbrido (`substancia.py`): uso semântico → k-NN/BM25 nos catálogos �
 
 | | |
 |--|--|
-| **Docs raiz** | **20.342 amostras** (cat mostra ~306K por nested `analises`) |
-| **Fonte** | OGC API `geoservicos.sgb.gov.br` — rocha + mineral/minério |
-| **ID documento** | `GEO:{id_amostra}` |
+| **Docs raiz** | **77.180** features (`_id` = `GEO:{colecao}:{ogc_feature_id}`) |
+| **Docs (cat)** | **~1,16M** — raiz × nested `analises[]` (~15×); **não** usar cat como contagem |
+| **Composição** | Rocha ~72.975 · Mineral/Minério ~4.205 |
+| **`id_amostra`** | `numero_de_campo` — pode repetir (~22,5K valores únicos); várias análises por campo |
+| **Fonte** | OGC API `geoservicos.sgb.gov.br` — `analises-rocha` + `analises-mineral-minerio` |
+| **ID documento** | `GEO:{id_amostra}` (`numero_de_campo`) |
 | **Campos** | `id_amostra`, `classe`, `projeto`, `location`, `analitos[]`, `analises` (nested: `analito`, `valor`, `unidade`, `qualificador`) |
 | **Tools** | `geoquimica_proxima`, `geoquimica_detalhes_amostra` |
-| **Limitação** | Cobertura espacial irregular; muitas regiões minerais sem amostras no subconjunto indexado |
+| **Por que nested** | Filtro “Au ≥ X ppm” exige `nested` (analito + valor no mesmo elemento); trocar por `object` quebra queries |
+| **Ingest completo** | `setup_indices --index mr_geoquimica_v001` + `bot_geoquimica --index --recreate` (~30 min) |
+| **Contagem correta** | `curl -s 'http://localhost:9200/mr_geoquimica_v001/_count'` ou `setup_indices --list` coluna **DOCS(raiz)** |
 
 Exemplo de busca por proximidade (campo raiz `location`, não nested):
 
@@ -308,7 +315,7 @@ Usados em sobreposição com processos (`verificar_restricoes` / enriquecimento 
 
 | | |
 |--|--|
-| **Volume (cluster local)** | 55.043 documentos (após filtro mineral; SIFISC bruto ~milhões) |
+| **Volume (cluster local)** | **55.043** documentos · ~30 MB · green |
 | **Composição** | Autuacao ~36.331 · Apreensao ~12.785 · Embargo ~5.927 |
 | **Fontes** | `dadosabertos.ibama.gov.br` — ZIPs: auto de infração, termo de embargo, termo de apreensão |
 | **ETL** | `python -m bots.bot_autuacoes --all` (download + index + enrich `mr_empresas_v001`) |
@@ -316,6 +323,7 @@ Usados em sobreposição com processos (`verificar_restricoes` / enriquecimento 
 | **Geo** | `location` (geo_point); embargos podem ter `area_ha` |
 | **Join** | `cnpj_basico` → `mr_empresas_v001`; agregados `n_autuacoes`, `tem_risco_ibama` via `--enrich-empresas` |
 | **MCP** | `risco_ambiental_empresa`, `autuacoes_por_area` (`mcp_servers/empresas/queries/autuacoes.py`) |
+| **Histórico** | Ingest antigo gravou em `mr_autoacoes_v001` (typo); migrado com `scripts/migrate_autuacoes_index.py` |
 
 Cache local dos ZIPs: `~/.mineralradar/data/autuacoes/` (ou `ETL_DATA_DIR/autuacoes`).
 
@@ -326,7 +334,6 @@ Cache local dos ZIPs: `~/.mineralradar/data/autuacoes/` (ou `ETL_DATA_DIR/autuac
 | Índice | Situação | Próximo passo |
 |--------|----------|---------------|
 | `mr_ral_v001` | Criado, **0 docs** | Rodar ingest RAL/AMB |
-| `mr_cvm_listadas_v001` | **Não criado** | `python -m scripts.setup_indices --index mr_cvm_listadas_v001` + `python -m bots.bot_cvm --all` |
 
 ---
 
@@ -351,19 +358,29 @@ Cache local dos ZIPs: `~/.mineralradar/data/autuacoes/` (ou `ETL_DATA_DIR/autuac
 cd backend && source ../.env && source .venv/bin/activate
 python -m scripts.setup_indices --list
 
-# Criar índice ausente
+# CVM listadas (~367 docs no dev)
 python -m scripts.setup_indices --index mr_cvm_listadas_v001
+python -m bots.bot_cvm --all
 
-# IBAMA autuações (~55K docs filtrados mineral) — mineral-radar-etl/
+# IBAMA autuações (~55K docs filtrados mineral)
+python -m scripts.setup_indices --index mr_autuacoes_v001
 python -m bots.bot_autuacoes --all
 python -m bots.bot_autuacoes --all --skip-download   # reindex com ZIPs em cache
+
+# Corrigir índice legado mr_autoacoes_v001 → mr_autuacoes_v001 (reindex rápido, sem reparse)
+python scripts/migrate_autuacoes_index.py
+
+# Corrigir mapping geoquímica (location geo_point) sem re-baixar OGC (~2–5 min)
+python scripts/migrate_geoquimica_mapping.py
+
+# Geoquímica CPRM (~77K features OGC) — mineral-radar-etl/
+python -m bots.bot_geoquimica --count
+python -m scripts.setup_indices --index mr_geoquimica_v001   # backend/
+python -m bots.bot_geoquimica --index --recreate             # após fix de _id
 
 # Catálogo oficial de substâncias ANM (~862) — mineral-radar-etl/
 python -m bots.bot_substancias_anm
 python -m bots.bot_substancias_anm --skip-download   # ZIP já em ~/.mineralradar/data/scm/
-
-# ETL CVM (a partir de mineral-radar-etl/)
-python -m bots.bot_cvm --all
 
 # Validar cluster + probes Carajás / geoquímica
 python scripts/validate_opensearch_cluster.py
@@ -395,3 +412,5 @@ curl -s 'http://localhost:9200/_cat/indices/mr_geoquimica_v001?v'
 | 2026-05-16 | Documento criado: índices `mr_*`, snapshot `mineralradar-local`, lacunas e notas operacionais |
 | 2026-05-16 | `mr_substancias_v001` atualizado para 862 docs (catálogo oficial ANM via `bot_substancias_anm`) |
 | 2026-05-16 | `mr_autuacoes_v001` indexado (55.043 docs IBAMA SIFISC via `bot_autuacoes.py`) |
+| 2026-05-16 | Releitura ao vivo: `mr_cvm_listadas_v001` (367); cluster **yellow** ~3,8 GB |
+| 2026-05-16 | Migração `mr_autoacoes_v001` → `mr_autuacoes_v001` (55.043 docs; script `migrate_autuacoes_index.py`) |

@@ -686,7 +686,8 @@ MR_RAL = {
 # 12. mr_geoquimica_v001
 # Análises geoquímicas do SGB/CPRM (GeoBank): rocha e mineral/minério.
 # Um doc por amostra, com campo nested ``analises`` para cada analito medido.
-# Coleções OGC API: analises-rocha (61K) + analises-mineral-minerio (4K).
+# Coleções OGC API: analises-rocha (~73K) + analises-mineral-minerio (~4K) ≈ 77K amostras.
+# _cat/indices soma filhos nested; _count = documentos raiz (amostras).
 
 MR_GEOQUIMICA = {
     "settings": _settings(shards=1, replicas=0),
@@ -694,7 +695,9 @@ MR_GEOQUIMICA = {
         "dynamic": "strict",
         "properties": {
             # ── Identificação ────────────────────────────────────────────
-            "id_amostra":               {"type": "keyword"},   # numero_de_campo
+            "id_amostra":               {"type": "keyword"},   # numero_de_campo (pode repetir entre features)
+            "ogc_feature_id":           {"type": "keyword"},   # id único na API OGC
+            "colecao_ogc":              {"type": "keyword"},   # analises-rocha | analises-mineral-minerio
             "numero_laboratorio":       {"type": "keyword"},   # numero_de_laboratorio
             "classe":                   {"type": "keyword"},   # Rocha | Mineral/Minério
             # ── Projeto / contexto ───────────────────────────────────────
@@ -1037,19 +1040,32 @@ def list_indices(client: OpenSearch) -> None:
         index="mr_*", h="index,docs.count,store.size,health", s="index", format="json"
     )
     existing = {r["index"] for r in rows} if rows else set()
-    log.info("\n%-32s %-6s %-10s %-12s  %-7s  %s", "ÍNDICE", "FASE", "DOCS", "TAMANHO", "STATUS", "FONTE")
-    log.info("-" * 90)
+    log.info(
+        "\n%-32s %-6s %-10s %-10s %-12s  %-7s  %s",
+        "ÍNDICE", "FASE", "DOCS(cat)", "DOCS(raiz)", "TAMANHO", "STATUS", "FONTE",
+    )
+    log.info("-" * 100)
     for name, meta in ALL_INDICES.items():
         if name in existing:
             r = next(r for r in rows if r["index"] == name)
             status = f"[{r.get('health','?')}]"
-            docs = r.get("docs.count", "0")
+            docs_cat = r.get("docs.count", "0")
             size = r.get("store.size", "-")
+            try:
+                docs_root = str(client.count(index=name)["count"])
+            except Exception:
+                docs_root = "?"
         else:
             status = "[ausente]"
-            docs = "-"
+            docs_cat = docs_root = "-"
             size = "-"
-        log.info("%-32s F%-5d %-10s %-12s  %-7s  %s", name, meta["fase"], docs, size, status, meta["fonte"])
+        log.info(
+            "%-32s F%-5d %-10s %-10s %-12s  %-7s  %s",
+            name, meta["fase"], docs_cat, docs_root, size, status, meta["fonte"],
+        )
+    log.info(
+        "\n  mr_geoquimica_v001: DOCS(cat) inclui nested analises[]; use DOCS(raiz) = amostras."
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

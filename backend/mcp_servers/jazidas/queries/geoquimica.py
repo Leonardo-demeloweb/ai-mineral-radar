@@ -14,7 +14,7 @@ Expõe as tools ``geoquimica_proxima`` e ``geoquimica_detalhes_amostra``:
   - Retorna ``mapa.pontos`` para visualização no frontend
 
 Índice:
-    mr_geoquimica_v001  (~65K docs — amostras com location geo_point + nested analises)
+    mr_geoquimica_v001  (~77K amostras API; _count = raiz; _cat inclui nested analises)
 
 Performance esperada: ~20–50ms (geo_distance + optional term filter)
 """
@@ -442,7 +442,8 @@ async def executar_geoquimica_detalhes_amostra(
     """
     Busca uma amostra geoquímica pelo ``id_amostra`` (número de campo CPRM).
 
-    Documento OpenSearch: ``_id`` = ``GEO:{id_amostra}``.
+    ``_id`` no índice = ``GEO:{colecao}:{ogc_feature_id}``; busca por ``id_amostra``
+    (numero_de_campo) via term/wildcard — pode haver várias análises por campo.
     """
     aid = normalize_id_amostra(id_amostra)
     if not aid:

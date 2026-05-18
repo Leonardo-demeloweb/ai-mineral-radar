@@ -147,78 +147,21 @@ def get_os_client() -> OpenSearch:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Index mapping
+# Index (mapping canônico em backend/scripts/setup_indices.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
-INDEX_MAPPING = {
-    "settings": {
-        "number_of_shards": 1,
-        "number_of_replicas": 0,
-        "analysis": {
-            "analyzer": {
-                "pt_folding": {
-                    "type": "custom",
-                    "tokenizer": "standard",
-                    "filter": ["lowercase", "asciifolding"],
-                }
-            }
-        },
-    },
-    "mappings": {
-        "properties": {
-            # Identificadores
-            "cnpj_cia":      {"type": "keyword"},
-            "cnpj_basico":   {"type": "keyword"},
-            "cd_cvm":        {"type": "keyword"},
-            # Razão social / nome
-            "denom_social": {
-                "type": "text",
-                "analyzer": "pt_folding",
-                "fields": {"keyword": {"type": "keyword"}},
-            },
-            "denom_comerc": {
-                "type": "text",
-                "analyzer": "pt_folding",
-                "fields": {"keyword": {"type": "keyword"}},
-            },
-            # Classificações
-            "setor_ativ":          {"type": "keyword"},
-            "tp_merc":             {"type": "keyword"},
-            "categ_reg":           {"type": "keyword"},
-            "sit":                 {"type": "keyword"},
-            "sit_emissor":         {"type": "keyword"},
-            "controle_acionario":  {"type": "keyword"},
-            # Datas
-            "dt_reg":     {"type": "date", "format": "yyyy-MM-dd"},
-            "dt_const":   {"type": "date", "format": "yyyy-MM-dd"},
-            "dt_cancel":  {"type": "date", "format": "yyyy-MM-dd"},
-            "dt_ini_sit": {"type": "date", "format": "yyyy-MM-dd"},
-            "motivo_cancel": {"type": "keyword"},
-            # Localização
-            "uf":  {"type": "keyword"},
-            "mun": {"type": "keyword"},
-            "pais": {"type": "keyword"},
-            # Contato
-            "email":      {"type": "keyword"},
-            "email_resp": {"type": "keyword"},
-            "resp":       {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
-            # Auditor
-            "cnpj_auditor": {"type": "keyword"},
-            "auditor":      {"type": "keyword"},
-            # Metadados ETL
-            "criterio_inclusao": {"type": "keyword"},
-            "indexado_em":       {"type": "date"},
-        }
-    },
-}
+_SETUP_INDICES_CMD = (
+    "cd backend && python -m scripts.setup_indices --index mr_cvm_listadas_v001"
+)
 
 
 def ensure_index(client: OpenSearch) -> None:
     if client.indices.exists(index=INDEX_CVM):
         log.info("index.existe", index=INDEX_CVM)
         return
-    client.indices.create(index=INDEX_CVM, body=INDEX_MAPPING)
-    log.info("index.criado", index=INDEX_CVM)
+    raise RuntimeError(
+        f"Índice {INDEX_CVM} não existe. Crie o mapping com:\n  {_SETUP_INDICES_CMD}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

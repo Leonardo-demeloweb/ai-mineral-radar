@@ -5,9 +5,13 @@ bot_geoquimica.py — SGB/CPRM Geoquímica OGC API → mr_geoquimica_v001
 Indexa análises geoquímicas do Serviço Geológico do Brasil (SGB/CPRM)
 usando a API OGC Features padrão.
 
-Coleções indexadas:
-  analises-rocha          61.067 docs  (análises de amostras de rocha)
-  analises-mineral-minerio 4.147 docs  (análises de mineral/minério)
+Coleções indexadas (OGC ``numberMatched``, 2026):
+  analises-rocha            ~73K features
+  analises-mineral-minerio  ~4,2K features
+  Total API                 ~77K amostras → 1 doc raiz/amostra em OpenSearch
+
+Nota: ``_cat/indices`` soma filhos **nested** ``analises[]`` (~15× o número de amostras).
+Use ``GET mr_geoquimica_v001/_count`` para documentos raiz.
 
 Campos por amostra:
   id_amostra, classe, projeto, laboratorio, abertura, leitura,
@@ -27,8 +31,10 @@ Fonte: https://geoservicos.sgb.gov.br/ogcapi/collections/geologia/geoquimica/
 """
 from __future__ import annotations
 
+import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterator
 
 import click
@@ -57,6 +63,33 @@ COLECOES: list[tuple[str, str]] = [
 # ─────────────────────────────────────────────────────────────────────────────
 # OpenSearch client
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _ensure_geoquimica_index(os_client: OpenSearch) -> None:
+    """Cria índice com mapping oficial (``location: geo_point``, nested ``analises``)."""
+    backend_root = Path(__file__).resolve().parents[2] / "backend"
+    if not backend_root.is_dir():
+        log.warning(
+            "index.setup.skip",
+            msg="Pasta backend/ não encontrada — rode: "
+                "python -m scripts.setup_indices --index mr_geoquimica_v001",
+        )
+        return
+    root = str(backend_root)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        from scripts.setup_indices import ALL_INDICES, create_index
+
+        create_index(
+            os_client,
+            INDEX_GEOQUIMICA,
+            ALL_INDICES[INDEX_GEOQUIMICA]["body"],
+            recreate=False,
+        )
+        log.info("index.created", index=INDEX_GEOQUIMICA, source="setup_indices")
+    except Exception as exc:
+        log.warning("index.setup.failed", error=str(exc)[:200])
+
 
 def get_os_client() -> OpenSearch:
     use_ssl = settings.opensearch_url.startswith("https")
@@ -140,14 +173,51 @@ def download_colecao(
 # Parsing
 # ─────────────────────────────────────────────────────────────────────────────
 
-def parse_feature(feat: dict, classe_label: str, now_iso: str) -> dict | None:
+def _coords_from_feature(props: dict, geo: dict) -> tuple[float, float] | None:
+    """Lat/lon de properties; fallback para geometry Point (OGC GeoJSON)."""
+    lat = props.get("latitude")
+    lon = props.get("longitude")
+    if lat is not None and lon is not None:
+        return float(lat), float(lon)
+    if (geo or {}).get("type") == "Point":
+        coords = geo.get("coordinates") or []
+        if len(coords) >= 2:
+            return float(coords[1]), float(coords[0])
+    return None
+
+
+def _doc_id(collection: str, feat: dict, id_amostra: str) -> str:
+    """
+    ID OpenSearch único por feature OGC.
+
+    ``numero_de_campo`` sozinho colide (~77K features → ~22,5K docs).
+    O campo ``id`` da feature é único na API CPRM.
+    """
+    ogc_id = feat.get("id")
+    if ogc_id is not None and str(ogc_id).strip() != "":
+        return f"GEO:{collection}:{ogc_id}"
+    props = feat.get("properties") or {}
+    lab = (props.get("numero_de_laboratorio") or "").strip()
+    proj = (props.get("projeto_amostragem") or "").strip()[:48]
+    dt = (props.get("data_de_analise") or "")[:10]
+    tail = "|".join(x for x in (lab, proj, dt) if x) or id_amostra
+    safe = tail.replace("/", "-").replace(" ", "_")
+    return f"GEO:{collection}:{id_amostra}:{safe}"
+
+
+def parse_feature(
+    feat: dict,
+    collection: str,
+    classe_label: str,
+    now_iso: str,
+) -> dict | None:
     props = feat.get("properties") or {}
     geo   = feat.get("geometry") or {}
 
-    lat = props.get("latitude")
-    lon = props.get("longitude")
-    if lat is None or lon is None:
+    coords = _coords_from_feature(props, geo)
+    if coords is None:
         return None
+    lat, lon = coords
 
     id_amostra = props.get("numero_de_campo", "").strip()
     if not id_amostra:
@@ -174,8 +244,11 @@ def parse_feature(feat: dict, classe_label: str, now_iso: str) -> dict | None:
     dt_raw = props.get("data_de_analise") or ""
     dt_analise: str | None = dt_raw[:10] if dt_raw else None
 
+    ogc_id = feat.get("id")
     return {
-        "_id": f"GEO:{id_amostra}",
+        "_id":                        _doc_id(collection, feat, id_amostra),
+        "ogc_feature_id":             str(ogc_id) if ogc_id is not None else None,
+        "colecao_ogc":                collection,
         "id_amostra":                 id_amostra,
         "numero_laboratorio":         props.get("numero_de_laboratorio") or None,
         "classe":                     classe_label,
@@ -219,12 +292,30 @@ def index_colecao(
     dry_run: bool = False,
 ) -> dict[str, int]:
     now_iso = datetime.now(timezone.utc).isoformat()
-    stats = {"total": 0, "indexed": 0, "skipped": 0, "errors": 0}
+    stats = {
+        "total": 0,
+        "indexed": 0,
+        "skipped": 0,
+        "skipped_sem_coords": 0,
+        "skipped_sem_id": 0,
+        "errors": 0,
+    }
     batch: list[dict] = []
 
     for feat in download_colecao(collection, dry_run=dry_run):
         stats["total"] += 1
-        doc = parse_feature(feat, classe_label, now_iso)
+        props = feat.get("properties") or {}
+        geo = feat.get("geometry") or {}
+        if _coords_from_feature(props, geo) is None:
+            stats["skipped"] += 1
+            stats["skipped_sem_coords"] += 1
+            continue
+        id_amostra = (props.get("numero_de_campo") or "").strip()
+        if not id_amostra:
+            stats["skipped"] += 1
+            stats["skipped_sem_id"] += 1
+            continue
+        doc = parse_feature(feat, collection, classe_label, now_iso)
         if doc is None:
             stats["skipped"] += 1
             continue
@@ -250,7 +341,7 @@ def index_colecao(
     return stats
 
 
-def log_summary(stats_all: dict[str, dict]) -> None:
+def log_summary(stats_all: dict[str, dict], os_client: OpenSearch | None = None) -> None:
     log.info("=" * 50)
     total_indexed = 0
     for col, s in stats_all.items():
@@ -260,10 +351,21 @@ def log_summary(stats_all: dict[str, dict]) -> None:
             total=s["total"],
             indexed=s["indexed"],
             skipped=s["skipped"],
+            skipped_sem_coords=s.get("skipped_sem_coords", 0),
+            skipped_sem_id=s.get("skipped_sem_id", 0),
             errors=s["errors"],
         )
         total_indexed += s["indexed"]
     log.info("summary.total_indexed", total=total_indexed)
+    if os_client:
+        os_client.indices.refresh(index=INDEX_GEOQUIMICA)
+        root = os_client.count(index=INDEX_GEOQUIMICA)["count"]
+        log.info(
+            "summary.opensearch",
+            index=INDEX_GEOQUIMICA,
+            docs_raiz=root,
+            nota_cat="docs.count em _cat inclui nested analises[] (~15x docs_raiz)",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -272,6 +374,11 @@ def log_summary(stats_all: dict[str, dict]) -> None:
 
 @click.command()
 @click.option("--index",    is_flag=True, help="Baixa e indexa as coleções geoquímicas.")
+@click.option(
+    "--recreate",
+    is_flag=True,
+    help="Apaga mr_geoquimica_v001 antes de indexar (obrigatório após mudança de _id).",
+)
 @click.option("--dry-run",  is_flag=True, help="Simula sem escrever no OpenSearch.")
 @click.option("--count",    is_flag=True, help="Apenas conta docs disponíveis na API.")
 @click.option(
@@ -281,7 +388,7 @@ def log_summary(stats_all: dict[str, dict]) -> None:
     show_default=True,
     help="Coleção a indexar.",
 )
-def main(index: bool, dry_run: bool, count: bool, classe: str) -> None:
+def main(index: bool, dry_run: bool, count: bool, classe: str, recreate: bool) -> None:
     """bot_geoquimica — SGB/CPRM Geoquímica OGC API → mr_geoquimica_v001."""
 
     if count:
@@ -306,6 +413,12 @@ def main(index: bool, dry_run: bool, count: bool, classe: str) -> None:
 
     os_client = get_os_client() if not dry_run else None
 
+    if recreate and os_client and not dry_run:
+        if os_client.indices.exists(index=INDEX_GEOQUIMICA):
+            os_client.indices.delete(index=INDEX_GEOQUIMICA)
+            log.info("index.deleted", index=INDEX_GEOQUIMICA)
+        _ensure_geoquimica_index(os_client)
+
     stats_all: dict[str, dict] = {}
     for col, label in colecoes_alvo:
         log.info("starting", collection=col, classe=label, dry_run=dry_run)
@@ -322,7 +435,7 @@ def main(index: bool, dry_run: bool, count: bool, classe: str) -> None:
         log.info("collection.done", collection=col,
                  indexed=stats["indexed"], elapsed_s=stats["elapsed_s"])
 
-    log_summary(stats_all)
+    log_summary(stats_all, os_client=os_client)
 
 
 if __name__ == "__main__":

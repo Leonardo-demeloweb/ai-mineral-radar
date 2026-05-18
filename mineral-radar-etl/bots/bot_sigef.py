@@ -35,6 +35,9 @@ Uso:
   python -m bots.bot_sigef --uf MG --uf PA --index
   python -m bots.bot_sigef --all-ufs --index
   python -m bots.bot_sigef --uf MG --dry-run
+  python -m bots.bot_sigef --uf MG --index --resume
+  python -m bots.bot_sigef --uf MG --index --reset-checkpoint
+  python -m bots.bot_sigef --uf AC --index --dry-run --limit-pages 2
   python -m bots.bot_sigef --uf MG --enrich-jazidas
 """
 from __future__ import annotations
@@ -51,11 +54,22 @@ from shapely.geometry import mapping, shape
 from shapely.ops import transform
 import pyproj
 
+from bots.common.checkpoint import (
+    load_checkpoint,
+    mark_uf_done,
+    mark_uf_failed,
+    reset_checkpoint,
+    resume_start_index,
+    should_skip_uf,
+    update_uf_progress,
+)
 from bots.common.logging import get_logger
 from bots.common.settings import settings
 
 log = get_logger(__name__)
 
+BOT_NAME      = "bot_sigef"
+PHASE_INDEX   = "index"
 INDEX_SIGEF   = "mr_sigef_v001"
 INDEX_JAZIDAS = "mr_jazidas_v001"
 
@@ -320,23 +334,40 @@ def parse_gml_page(xml_text: str, uf: str, now_iso: str) -> tuple[list[dict], in
 # Streaming iterator
 # ─────────────────────────────────────────────────────────────────────────────
 
-def iter_uf_docs(uf: str, dry_run: bool = False) -> Iterator[dict]:
+def iter_uf_docs(
+    uf: str,
+    dry_run: bool = False,
+    *,
+    start_from: int = 0,
+    limit_pages: int | None = None,
+    on_page_done=None,
+) -> Iterator[dict]:
     """
     Pagina o WFS SIGEF por UF e gera documentos para bulk index.
     Para sem total conhecido — continua até página vazia.
     """
-    now_iso   = datetime.now(timezone.utc).isoformat()
-    parsed    = 0
-    skipped   = 0
-    start     = 0
+    now_iso      = datetime.now(timezone.utc).isoformat()
+    parsed       = 0
+    skipped      = 0
+    start        = start_from
     empty_streak = 0
+    pages_done   = 0
+    failed       = False
+
+    if start_from > 0:
+        log.info("sigef.wfs.resume", uf=uf, start_index=start_from)
 
     with _make_http_session() as http:
         while True:
+            if limit_pages is not None and pages_done >= limit_pages:
+                log.info("sigef.wfs.limit_pages", uf=uf, pages=pages_done)
+                break
+
             try:
                 xml_text = fetch_page_gml(uf, start, PAGE_SIZE, http)
             except Exception as e:
                 log.error("sigef.wfs.page_error", uf=uf, start=start, error=str(e))
+                failed = True
                 break
 
             docs, raw_count = parse_gml_page(xml_text, uf, now_iso)
@@ -358,19 +389,36 @@ def iter_uf_docs(uf: str, dry_run: bool = False) -> Iterator[dict]:
                 yield {"_index": INDEX_SIGEF, "_id": doc["parcela_codigo"], "_source": doc}
 
             skipped += raw_count - len(docs)
+            pages_done += 1
+
+            next_start = start + PAGE_SIZE
+            if on_page_done:
+                on_page_done(
+                    wfs_start_index=next_start,
+                    docs_parsed=parsed,
+                    page_raw=raw_count,
+                    failed=False,
+                )
 
             if raw_count < PAGE_SIZE:
                 break
 
-            start += PAGE_SIZE
+            start = next_start
             if start % 10_000 == 0:
                 log.info("sigef.wfs.progress",
                          uf=uf, parsed=parsed, skipped=skipped, start=start)
 
-            # Pausa entre páginas para não sobrecarregar o servidor INCRA
             time.sleep(SLEEP_BETWEEN_PAGES_S)
 
-    log.info("sigef.wfs.done", uf=uf, parsed=parsed, skipped=skipped)
+    if failed and on_page_done:
+        on_page_done(
+            wfs_start_index=start,
+            docs_parsed=parsed,
+            page_raw=0,
+            failed=True,
+        )
+
+    log.info("sigef.wfs.done", uf=uf, parsed=parsed, skipped=skipped, failed=failed)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -514,12 +562,21 @@ def run_enrich_jazidas(client: OpenSearch, uf: str | None, dry_run: bool):
 @click.option("--index",          is_flag=True,  help="Indexar parcelas SIGEF em mr_sigef_v001.")
 @click.option("--enrich-jazidas", is_flag=True,  help="Marcar sobreposicao_sigef em mr_jazidas_v001.")
 @click.option("--dry-run",        is_flag=True,  help="Parse e log sem indexar.")
+@click.option("--resume",         is_flag=True,
+              help="Retoma UFs incompletas a partir do checkpoint JSON.")
+@click.option("--reset-checkpoint", "clear_checkpoint", is_flag=True,
+              help="Apaga checkpoint antes de executar.")
+@click.option("--limit-pages", type=int, default=None,
+              help="Máx. páginas WFS por UF (teste / dry-run).")
 def main(
     uf: tuple[str, ...],
     all_ufs: bool,
     index: bool,
     enrich_jazidas: bool,
     dry_run: bool,
+    resume: bool,
+    clear_checkpoint: bool,
+    limit_pages: int | None,
 ):
     """
     Bot de ingestão INCRA SIGEF via WFS GML2 → mr_sigef_v001.
@@ -538,6 +595,13 @@ def main(
 
     ufs_to_process = list(ALL_UFS if all_ufs else [u.upper() for u in uf])
 
+    if clear_checkpoint:
+        reset_checkpoint(BOT_NAME)
+        log.info("sigef.checkpoint.reset")
+
+    ckpt = load_checkpoint(BOT_NAME)
+    persist_ckpt = not dry_run
+
     client = get_os_client()
 
     total_ok  = 0
@@ -548,10 +612,45 @@ def main(
         log.info("sigef.uf.start", uf=state_uf)
 
         if index:
-            docs = iter_uf_docs(state_uf, dry_run=dry_run)
-            ok, err = bulk_index(client, docs, state_uf, dry_run=dry_run)
-            total_ok  += ok
-            total_err += err
+            if should_skip_uf(ckpt, state_uf, PHASE_INDEX, resume=resume):
+                log.info("sigef.uf.skip_done", uf=state_uf)
+            else:
+                start_from = resume_start_index(
+                    ckpt, state_uf, PHASE_INDEX, resume=resume,
+                )
+
+                def _on_page(**kwargs):
+                    if kwargs.get("failed"):
+                        mark_uf_failed(
+                            ckpt, state_uf, PHASE_INDEX,
+                            wfs_start_index=kwargs["wfs_start_index"],
+                            docs_parsed=kwargs["docs_parsed"],
+                            docs_indexed=0,
+                            error="wfs_page_error",
+                            persist=persist_ckpt,
+                        )
+                    else:
+                        update_uf_progress(
+                            ckpt, state_uf, PHASE_INDEX,
+                            wfs_start_index=kwargs["wfs_start_index"],
+                            docs_parsed=kwargs["docs_parsed"],
+                            persist=persist_ckpt,
+                        )
+
+                docs = iter_uf_docs(
+                    state_uf,
+                    dry_run=dry_run,
+                    start_from=start_from,
+                    limit_pages=limit_pages,
+                    on_page_done=_on_page,
+                )
+                ok, err = bulk_index(client, docs, state_uf, dry_run=dry_run)
+                total_ok  += ok
+                total_err += err
+
+                if limit_pages is None:
+                    mark_uf_done(ckpt, state_uf, PHASE_INDEX, ok)
+                    log.info("sigef.uf.checkpoint_done", uf=state_uf, indexed=ok)
 
         if enrich_jazidas:
             run_enrich_jazidas(client, state_uf, dry_run=dry_run)
