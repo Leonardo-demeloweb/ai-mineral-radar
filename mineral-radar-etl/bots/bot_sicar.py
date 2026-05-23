@@ -135,7 +135,7 @@ def get_uf_total(uf: str, session: requests.Session) -> int:
         "count":        1,
         "startIndex":   0,
         "outputFormat": "application/json",
-    }, verify=False, timeout=30)
+    }, verify=False, timeout=120)
     resp.raise_for_status()
     d = resp.json()
     # totalFeatures = total na camada; numberReturned = nesta página
@@ -595,9 +595,28 @@ def main(
                 total_ok  += ok
                 total_err += err
 
-                if limit_pages is None:
-                    mark_uf_done(ckpt, state_uf, PHASE_INDEX, ok)
-                    log.info("sicar.uf.checkpoint_done", uf=state_uf, indexed=ok)
+                if limit_pages is None and not dry_run:
+                    entry = ckpt["ufs"].get(f"{state_uf.upper()}:{PHASE_INDEX}", {})
+                    if entry.get("status") == "failed":
+                        log.warning(
+                            "sicar.uf.checkpoint_failed",
+                            uf=state_uf,
+                            indexed=ok,
+                            resume_from=entry.get("wfs_start_index"),
+                        )
+                    elif ok > 0:
+                        mark_uf_done(ckpt, state_uf, PHASE_INDEX, ok)
+                        log.info("sicar.uf.checkpoint_done", uf=state_uf, indexed=ok)
+                    else:
+                        mark_uf_failed(
+                            ckpt, state_uf, PHASE_INDEX,
+                            wfs_start_index=start_from,
+                            docs_parsed=0,
+                            docs_indexed=0,
+                            error="wfs_total_error_or_empty",
+                            persist=persist_ckpt,
+                        )
+                        log.warning("sicar.uf.checkpoint_failed", uf=state_uf, indexed=0)
 
         if enrich_jazidas:
             run_enrich_jazidas(client, state_uf, dry_run=dry_run)

@@ -136,7 +136,12 @@ def should_skip_uf(state: dict[str, Any], uf: str, phase: str, *, resume: bool) 
         return False
     key = f"{uf.upper()}:{phase}"
     entry = state.get("ufs", {}).get(key)
-    return entry is not None and entry.get("status") == "done"
+    if not entry or entry.get("status") != "done":
+        return False
+    # UFs marcadas "done" sem indexar nada (ex.: timeout no WFS) devem rodar de novo
+    if int(entry.get("docs_indexed") or 0) == 0:
+        return False
+    return True
 
 
 def resume_start_index(state: dict[str, Any], uf: str, phase: str, *, resume: bool) -> int:

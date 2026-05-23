@@ -9,7 +9,7 @@ sqlalchemy>=2.0.30                  # ORM / Core para migrações e queries
 
 # ── Geoespacial ──────────────────────────────────────────────────────────────
 geopandas>=0.14.4                   # Shapefile → GeoDataFrame
-fiona>=1.9.6                        # I/O de Shapefiles (backend do GeoPandas)
+fiona>=1.10.1                        # I/O de Shapefiles (backend do GeoPandas)
 shapely>=2.0.5                      # Geometrias vetoriais em Python
 pyproj>=3.6.1                       # Reprojeção de coordenadas (EPSG)
 owslib>=0.31.0                      # Cliente WFS/WMS para CPRM e IBAMA
