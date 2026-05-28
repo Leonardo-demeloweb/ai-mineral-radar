@@ -68,9 +68,15 @@ ROUTE_CONFIGS: dict[str, dict] = {
         "hint": (
             "O usuário busca jazidas ou processos ANM. "
             "Passos obrigatórios: "
-            "(1) geo__buscar_municipio para resolver o local; "
+            "(1) geo__buscar_municipio para resolver o local (quando o local for mencionado); "
             "(2) jazidas__buscar_jazidas para obter processos ANM; "
             "(3) jazidas__buscar_fornecedores se houver referência a titulares/fornecedores. "
+            "FILTROS DE ÁREA EM HECTARES ('mais de X ha', 'acima de X hectares', "
+            "'área mínima de X ha'): use DIRETAMENTE o parâmetro area_min_ha=X "
+            "em jazidas__buscar_jazidas — NÃO é isócrona, NÃO requer geo. "
+            "Exemplo: 'calcário com mais de 100 ha na BA' → "
+            "buscar_jazidas(termo_busca='calcário', uf='BA', area_min_ha=100). "
+            "Os resultados já virão ordenados por área decrescente. "
             "Se a busca for DENTRO de um polígono específico (município, isócrona, área "
             "desenhada), use jazidas__jazidas_por_poligono(geometry=...) — para isócronas o "
             "geometry vem de feature.geometry de calcular_isocrona. "
@@ -318,7 +324,10 @@ explicitamente tempo de viagem: "isócrona", "em X minutos", "em X horas", \
 ATENÇÃO CRÍTICA: pedidos com raio em KM ("num raio de X km", "em até X km", \
 "X km de distância", "dentro de X km") NÃO são isócrona — são buscas normais \
 com filtro geográfico (rotas mineral/empresa/hybrid). \
-Só use *_em_isocrona quando o critério for TEMPO, não distância em km:
+Filtros de ÁREA EM HECTARES ("mais de X ha", "acima de X hectares", "area mínima") \
+também NÃO são isócrona — são filtros de propriedade do processo ANM (use rota \
+**mineral** com parâmetro area_min_ha da tool buscar_jazidas). \
+Só use *_em_isocrona quando o critério for TEMPO, não distância em km ou hectares:
 
 - **mineral_em_isocrona**: jazidas/processos minerais brutos dentro de \
 uma isócrona DE TEMPO. Ex: "jazidas de areia em até 60 min de caminhão", \

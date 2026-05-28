@@ -20,11 +20,13 @@ Uso:
   python -m bots.bot_anm_direto --uf MG              # Minas Gerais (~18K processos)
   python -m bots.bot_anm_direto --uf MG --limit 500  # validação rápida
   python -m bots.bot_anm_direto --uf SP --uf RJ       # múltiplas UFs
-  python -m bots.bot_anm_direto --all-ativos          # Brasil completo
+  python -m bots.bot_anm_direto --all-ativos          # Brasil completo (~267K, BRASIL.zip, carga única)
+  python -m bots.bot_anm_direto --inativos          # ~664K inativos (chunks de 50K, baixo RAM)
+  python -m bots.bot_anm_direto --inativos --chunk-size 100000
+  python -m bots.bot_anm_direto --all-ativos --chunk-size 50000  # opcional p/ ativos
 """
 from __future__ import annotations
 
-import json
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -44,6 +46,8 @@ log = get_logger(__name__)
 
 INDEX_NAME   = "mr_jazidas_v001"
 DEFAULT_BATCH = 300
+# Lotes de leitura do shapefile (--inativos usa chunked por padrão)
+DEFAULT_SHAPEFILE_CHUNK = 50_000
 
 ANM_SIGMINE_BASE = f"{settings.anm_base_url}/SIGMINE/PROCESSOS_MINERARIOS"
 HEADERS = {"User-Agent": settings.anm_user_agent}
@@ -106,24 +110,77 @@ def download_zip(url: str, dest: Path) -> Path:
 # Parse shapefile
 # ─────────────────────────────────────────────────────────────────────────────
 
-def parse_shapefile(zip_path: Path, ativo: bool) -> gpd.GeoDataFrame:
+def extract_shapefile_path(zip_path: Path) -> Path:
+    """Extrai ZIP ANM (se necessário) e retorna caminho do .shp."""
     with zipfile.ZipFile(zip_path) as zf:
         shp_files = [f for f in zf.namelist() if f.endswith(".shp")]
         if not shp_files:
             raise ValueError(f"Nenhum .shp em {zip_path}")
         extract_dir = zip_path.parent / zip_path.stem
         extract_dir.mkdir(exist_ok=True)
-        zf.extractall(extract_dir)
+        shp_rel = shp_files[0]
+        shp_path = extract_dir / shp_rel
+        if not shp_path.exists():
+            zf.extractall(extract_dir)
+    return shp_path
 
-    gdf = gpd.read_file(extract_dir / shp_files[0])
-    log.info("shapefile.colunas", cols=list(gdf.columns))
 
+def shapefile_feature_count(shp_path: Path) -> int:
+    import pyogrio
+    return int(pyogrio.read_info(shp_path)["features"])
+
+
+def _read_shapefile_slice(shp_path: Path, skip: int, max_features: int | None) -> gpd.GeoDataFrame:
+    """Lê fatia do shapefile via pyogrio (skip_features / max_features)."""
+    kwargs: dict = {"engine": "pyogrio", "skip_features": skip}
+    if max_features is not None:
+        kwargs["max_features"] = max_features
+    gdf = gpd.read_file(shp_path, **kwargs)
     if gdf.crs and gdf.crs.to_epsg() != 4326:
-        log.info("reproject", from_crs=str(gdf.crs))
         gdf = gdf.to_crs(epsg=4326)
+    return gdf
+
+
+def parse_shapefile(zip_path: Path, ativo: bool) -> gpd.GeoDataFrame:
+    """Carga completa em memória — mantida para UFs e BRASIL.zip (~267K features, mai/2026)."""
+    shp_path = extract_shapefile_path(zip_path)
+    gdf = _read_shapefile_slice(shp_path, skip=0, max_features=None)
+    log.info("shapefile.colunas", cols=list(gdf.columns))
 
     gdf["_ativo"] = ativo
     return gdf
+
+
+def iter_shapefile_chunks(
+    zip_path: Path,
+    ativo: bool,
+    chunk_size: int,
+) -> Iterator[tuple[gpd.GeoDataFrame, int, int]]:
+    """
+    Itera lotes do shapefile sem carregar o arquivo inteiro (~664K inativos no ZIP ANM mai/2026).
+
+    Yields (gdf_chunk, skip_offset, total_features).
+    """
+    shp_path = extract_shapefile_path(zip_path)
+    total = shapefile_feature_count(shp_path)
+    log.info("shapefile.chunked.start", path=shp_path.name, total=total, chunk_size=chunk_size)
+
+    logged_cols = False
+    for skip in range(0, total, chunk_size):
+        gdf = _read_shapefile_slice(shp_path, skip=skip, max_features=chunk_size)
+        if gdf.empty:
+            break
+        if not logged_cols:
+            log.info("shapefile.colunas", cols=list(gdf.columns))
+            logged_cols = True
+        gdf["_ativo"] = ativo
+        yield gdf, skip, total
+        log.info(
+            "shapefile.chunk.done",
+            skip=skip,
+            chunk_rows=len(gdf),
+            pct=round(min(skip + len(gdf), total) / total * 100, 1),
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -387,6 +444,46 @@ def bulk_index(client: OpenSearch, docs: list[dict]) -> tuple[int, int]:
     return ok, len(errs) if isinstance(errs, list) else errs
 
 
+def _index_gdf_rows(
+    os_client: OpenSearch,
+    gdf: gpd.GeoDataFrame,
+    uf_hint: str,
+    batch_size: int,
+    limit: int | None,
+    *,
+    indexed_so_far: int,
+) -> tuple[int, int, int, int]:
+    """Indexa linhas de um GeoDataFrame. Retorna (indexed, errors, skipped, indexed_so_far)."""
+    batch: list[dict] = []
+    skipped = 0
+    total_indexed = total_errors = 0
+    rows_seen = 0
+
+    for _, row in gdf.iterrows():
+        if limit is not None and indexed_so_far + total_indexed >= limit:
+            break
+        rows_seen += 1
+        doc = row_to_doc(row, uf_hint)
+        if doc is None:
+            skipped += 1
+            continue
+        batch.append(doc)
+
+        if len(batch) >= batch_size:
+            ok, errs = bulk_index(os_client, batch)
+            total_indexed += ok
+            total_errors += errs
+            log.info("batch.done", indexed=ok, errors=errs, total=indexed_so_far + total_indexed)
+            batch = []
+
+    if batch:
+        ok, errs = bulk_index(os_client, batch)
+        total_indexed += ok
+        total_errors += errs
+
+    return total_indexed, total_errors, skipped, indexed_so_far + total_indexed
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
@@ -394,8 +491,14 @@ def bulk_index(client: OpenSearch, docs: list[dict]) -> tuple[int, int]:
 @click.command()
 @click.option("--uf", multiple=True, help="UF(s) a indexar (ex: --uf MG --uf SP)")
 @click.option("--all-ativos", is_flag=True, help="Baixar BRASIL.zip (todos ativos)")
-@click.option("--inativos", is_flag=True, help="Baixar PROCESSOS_INATIVOS.zip")
+@click.option("--inativos", is_flag=True, help="Baixar PROCESSOS_INATIVOS.zip (~664K features, chunked por padrão)")
 @click.option("--batch-size", default=DEFAULT_BATCH, show_default=True)
+@click.option(
+    "--chunk-size", "shapefile_chunk", default=None, type=int,
+    help=f"Lê shapefile em lotes de N features (default inativos: {DEFAULT_SHAPEFILE_CHUNK}). "
+         "0 = carga completa em RAM (comportamento legado).",
+)
+@click.option("--no-chunk", is_flag=True, help="Com --inativos, força carga completa em RAM.")
 @click.option("--limit", type=int, default=None, help="Máx. de docs a indexar (para testes)")
 @click.option("--skip-download", is_flag=True, help="Reusar ZIP já baixado em etl_data_dir")
 def main(
@@ -403,6 +506,8 @@ def main(
     all_ativos: bool,
     inativos: bool,
     batch_size: int,
+    shapefile_chunk: int | None,
+    no_chunk: bool,
     limit: int | None,
     skip_download: bool,
 ) -> None:
@@ -424,6 +529,7 @@ def main(
         jobs.append((f"{ANM_SIGMINE_BASE}/{u.upper()}.zip", u.upper(), True))
 
     total_indexed = total_errors = 0
+    indexed_so_far = 0
     t0 = time.time()
 
     for url, uf_hint, ativo in jobs:
@@ -435,36 +541,58 @@ def main(
         else:
             log.info("download.skip", file=fname)
 
-        gdf = parse_shapefile(zip_path, ativo=ativo)
-        log.info("shapefile.loaded", uf=uf_hint, rows=len(gdf), ativo=ativo)
+        # Chunked: default só para --inativos (~664K no ZIP). Ativos/UF mantêm carga única.
+        use_chunk = False
+        chunk_n = shapefile_chunk
+        if inativos and fname == "PROCESSOS_INATIVOS.zip" and not no_chunk:
+            use_chunk = True
+            if chunk_n is None:
+                chunk_n = DEFAULT_SHAPEFILE_CHUNK
+        elif shapefile_chunk is not None and shapefile_chunk > 0:
+            use_chunk = True
+            chunk_n = shapefile_chunk
 
-        if limit:
-            gdf = gdf.head(limit)
-            log.info("shapefile.limitado", limit=limit)
+        skipped_job = 0
 
-        batch: list[dict] = []
-        skipped = 0
-
-        for _, row in gdf.iterrows():
-            doc = row_to_doc(row, uf_hint)
-            if doc is None:
-                skipped += 1
-                continue
-            batch.append(doc)
-
-            if len(batch) >= batch_size:
-                ok, errs = bulk_index(os_client, batch)
+        if use_chunk:
+            assert chunk_n is not None and chunk_n > 0
+            log.info("shapefile.mode", mode="chunked", chunk_size=chunk_n, file=fname)
+            for gdf_chunk, skip_off, total_feat in iter_shapefile_chunks(
+                zip_path, ativo=ativo, chunk_size=chunk_n,
+            ):
+                log.info(
+                    "shapefile.loaded",
+                    uf=uf_hint,
+                    rows=len(gdf_chunk),
+                    ativo=ativo,
+                    skip=skip_off,
+                    total=total_feat,
+                )
+                ok, errs, skipped, indexed_so_far = _index_gdf_rows(
+                    os_client, gdf_chunk, uf_hint, batch_size, limit,
+                    indexed_so_far=indexed_so_far,
+                )
                 total_indexed += ok
                 total_errors += errs
-                log.info("batch.done", indexed=ok, errors=errs, total=total_indexed)
-                batch = []
-
-        if batch:
-            ok, errs = bulk_index(os_client, batch)
+                skipped_job += skipped
+                if limit is not None and indexed_so_far >= limit:
+                    log.info("shapefile.limitado", limit=limit)
+                    break
+        else:
+            gdf = parse_shapefile(zip_path, ativo=ativo)
+            log.info("shapefile.loaded", uf=uf_hint, rows=len(gdf), ativo=ativo, mode="full")
+            if limit:
+                gdf = gdf.head(limit)
+                log.info("shapefile.limitado", limit=limit)
+            ok, errs, skipped, indexed_so_far = _index_gdf_rows(
+                os_client, gdf, uf_hint, batch_size, limit=None,
+                indexed_so_far=indexed_so_far,
+            )
             total_indexed += ok
             total_errors += errs
+            skipped_job = skipped
 
-        log.info("uf.done", uf=uf_hint, skipped=skipped)
+        log.info("uf.done", uf=uf_hint, skipped=skipped_job)
 
     elapsed = round(time.time() - t0, 1)
     log.info(

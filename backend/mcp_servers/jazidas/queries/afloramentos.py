@@ -279,7 +279,7 @@ async def executar_afloramentos_proximos(
         label = (a.get("rochas") or "Afloramento")[:120]
         mun = a.get("municipio")
         ufv = a.get("uf")
-        pontos_mapa.append({
+        ponto: dict[str, Any] = {
             "lat": float(lat),
             "lon": float(lon),
             "tipo": "afloramento",
@@ -289,7 +289,14 @@ async def executar_afloramentos_proximos(
             "municipios": [str(mun)] if mun else [],
             "uf": [str(ufv)] if ufv else [],
             "distancia_km": a["distancia_km"],
-        })
+        }
+        if a.get("tipo_afloramento"):
+            ponto["substancia"] = a["tipo_afloramento"]
+        if a.get("descricao"):
+            ponto["descricao"] = a["descricao"]
+        if a.get("projeto"):
+            ponto["projeto"] = a["projeto"]
+        pontos_mapa.append(ponto)
 
     logger.info(
         "afloramentos: bbox=%d features, raio=%d, filtro_rocha=%r → %d retornados",

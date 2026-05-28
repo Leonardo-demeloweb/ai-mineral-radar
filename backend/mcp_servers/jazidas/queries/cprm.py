@@ -314,7 +314,8 @@ def _mapa_pontos_from_ocorrencias(ocorrencias: list[dict[str, Any]]) -> dict[str
         mun = o.get("municipio")
         ufv = o.get("uf")
         oid = str(o.get("id") or o.get("nome") or "")
-        pontos_mapa.append({
+        nome = o.get("nome")
+        ponto: dict[str, Any] = {
             "lat": float(lat),
             "lon": float(lon),
             "tipo": "ocorrencia_mineral",
@@ -323,10 +324,19 @@ def _mapa_pontos_from_ocorrencias(ocorrencias: list[dict[str, Any]]) -> dict[str
             "municipios": [str(mun)] if mun else [],
             "uf": [str(ufv)] if ufv else [],
             "label": sp or "Ocorrência",
-            "importancia":  o.get("importancia"),
-            "status":       o.get("status_economico"),
+            "importancia": o.get("importancia"),
+            "status_economico": o.get("status_economico"),
             "distancia_km": o.get("distancia_km"),
-        })
+        }
+        if nome:
+            ponto["nome"] = nome
+        if o.get("projeto"):
+            ponto["projeto"] = o["projeto"]
+        if o.get("descricao"):
+            ponto["descricao"] = o["descricao"]
+        if o.get("provincia"):
+            ponto["provincia"] = o["provincia"]
+        pontos_mapa.append(ponto)
     return {"pontos": pontos_mapa}
 
 

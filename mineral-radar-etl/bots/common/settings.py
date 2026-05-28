@@ -3,13 +3,24 @@ Configurações globais do ETL via variáveis de ambiente (.env / Docker).
 Usa Pydantic Settings v2 — leitura automática de .env e variáveis de ambiente.
 """
 from pathlib import Path
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Procura .env em mineral-radar-etl/, raiz do monorepo e cwd (mesmo padrão do backend)
+_env_file: str | None = None
+for _path in (
+    Path(__file__).resolve().parents[2] / ".env",          # mineral-radar-etl/.env
+    Path(__file__).resolve().parents[3] / ".env",          # MineralRadar/.env
+    Path(".env"),
+):
+    if _path.exists():
+        _env_file = str(_path)
+        break
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_env_file,
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
@@ -22,9 +33,15 @@ class Settings(BaseSettings):
     )
 
     # ── OpenSearch ───────────────────────────────────────────────────────────
-    opensearch_url: str = Field(default="http://localhost:9200")
-    opensearch_user: str = Field(default="admin")
-    opensearch_pass: str = Field(default="admin")
+    opensearch_url: str = Field(
+        default="http://localhost:9200",
+        validation_alias=AliasChoices("OPENSEARCH_URL", "OPENSEARCH_ENDPOINT"),
+    )
+    opensearch_user: str = Field(default="")
+    opensearch_pass: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENSEARCH_PASS", "OPENSEARCH_PASSWORD"),
+    )
 
     # ── Azure OpenAI (embeddings) ─────────────────────────────────────────────
     # Aceita tanto AZURE_OPENAI_ENDPOINT quanto AZURE_OPENAI_API_KEY (nomes comuns do SDK Azure)

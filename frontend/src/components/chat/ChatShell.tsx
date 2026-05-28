@@ -402,8 +402,6 @@ function ResultCard({ item }: { item: ParsedResult }) {
     if (isSelected) {
       if (hasDetails) setOpen(true)
       cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    } else {
-      setOpen(false)
     }
   // hasDetails is stable (derived from item.details which doesn't change)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -450,6 +448,11 @@ function ResultCard({ item }: { item: ParsedResult }) {
   function handleClick() {
     if (ownId) {
       selectFeature(isSelected ? null : ownId)
+      // Do not depend solely on map selection to open details: the card
+      // must expand even when no corresponding marker is currently visible.
+      if (hasDetails) {
+        setOpen((v) => (isSelected ? false : !v))
+      }
     } else if (hasDetails) {
       setOpen((v) => !v)
     }
@@ -511,13 +514,16 @@ function ResultCard({ item }: { item: ParsedResult }) {
       >
         <MapPin size={11} className="shrink-0 opacity-80" />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold leading-tight break-words whitespace-normal">{cleanTitle}</p>
+          <p className="text-xs font-semibold leading-tight truncate" title={cleanTitle}>{cleanTitle}</p>
           {subtitle && (
-            <p className="text-[10px] opacity-70 break-words whitespace-normal mt-0.5">{subtitle}</p>
+            <p className="text-[10px] opacity-70 truncate mt-0.5" title={subtitle}>{subtitle}</p>
           )}
         </div>
         {status && (
-          <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md mr-1 ${statusBadgeClass(status)}`}>
+          <span
+            title={status}
+            className={`shrink-0 max-w-[7rem] truncate text-[10px] font-semibold px-1.5 py-0.5 rounded-md mr-1 ${statusBadgeClass(status)}`}
+          >
             {status}
           </span>
         )}
@@ -572,14 +578,22 @@ type ContentBlock =
  * e.g. "- Processo: 832..." is a detail; "- Dinamus Mineração Ltda" is a title.
  */
 const DETAIL_KEY_RE =
-  /^(Processo|Município|Municip|Fase|Área|Area|CNPJ|Endereço|Endereco|Telefone|Email|Contato|WhatsApp|Outros nomes|Obs|Site|Atividade|CNAE|Raio|Distância|Distancia|Situação|Situacao|Capital|Porte|Localização|Localizacao|Projeto|Classe|Laboratório|Laboratorio|Teores?|Amostra|Coordenadas|Analito)\s*:/i
+  /^(Processo|Titular|Substância|Substancias?|Município|Municip|Fase|Área|Area|CNPJ|Endereço|Endereco|Telefone|Email|Contato|WhatsApp|Outros nomes|Obs|Site|Atividade|CNAE(?:\s+(?:titular|principal(?:\s+do\s+titular)?))?|Raio|Distância|Distancia|Situação|Situacao|Capital|Porte|Localização|Localizacao|Projeto|Classe|Laboratório|Laboratorio|Teores?|Amostra|Coordenadas|Analito|Validade|Data\s+de\s+protocolo|Sócios?|Prioridade|Categorias?\s+estratégicas?|Restrições?|Substâncias?\s+CPRM)\s*:/i
 
-/** Linhas de detalhe geoquímico (ex. Ce: 11 ppm | La: 11,5 ppm) */
+/** Linhas de detalhe (ex. Ce: 11 ppm, Sem restrições de TI/UC) */
 function isGeoquimicaDetailLine(dashRaw: string): boolean {
   if (DETAIL_KEY_RE.test(dashRaw)) return true
   if (/^Localiza[çc][ãa]o\s*:/i.test(dashRaw)) return true
+  // Generic fallback: many LLM responses emit "Campo: valor" keys that are
+  // not in DETAIL_KEY_RE (e.g. "CNAE principal do titular", "Prioridade estratégica").
+  // Treat them as details when the key is reasonably short.
+  if (/^[^:]{1,48}\s*:\s*\S+/.test(dashRaw)) return true
   if (/^[A-Za-z][A-Za-z0-9₀-₉]*(?:[₂₃₄₅]|[0-9])?\s*:/.test(dashRaw)) return true
   if (/ppm|mg\/kg/i.test(dashRaw) && dashRaw.includes(':')) return true
+  // Annotation lines emitted by the agent without a colon, e.g.
+  // "Sem restrições de TI/UC", "Com sobreposição SIGEF", "Sem sobreposição CAR"
+  if (/^(Sem|Com)\s+(restrições?|sobreposição|conflito|overlap|cobertura)/i.test(dashRaw)) return true
+  if (/\bTI\/UC\b|\bSIGEF\b|\bSICAR\b|\bCAR\b/i.test(dashRaw) && !/:/.test(dashRaw)) return true
   return false
 }
 

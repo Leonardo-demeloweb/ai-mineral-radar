@@ -1,6 +1,6 @@
 # Índices OpenSearch — MineralRadar (estado atual)
 
-> **Atualizado em:** 16 de maio de 2026  
+> **Atualizado em:** 23 de maio de 2026  
 > **Cluster medido:** `mineralradar-local` (OpenSearch **3.6.0**, Docker `backend/docker-compose.local.yml`)  
 > **Endpoint típico dev:** `http://localhost:9200` (variáveis `OPENSEARCH_*` no `.env`)  
 > **Mapeamentos e criação:** `backend/scripts/setup_indices.py`  
@@ -35,7 +35,7 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 
 | Índice | Fase | Docs (cat) | Docs (raiz) | Tamanho | Health | Fonte / ETL | MCP / uso principal |
 |--------|------|------------|-------------|---------|--------|-------------|---------------------|
-| `mr_jazidas_v001` | 1 | 906.780 | 906.780 | 1,5 GB | green | ANM SIGMINE + SCM + SICOP | Jazidas: `buscar_jazidas`, detalhes, vigência, disponibilidades |
+| `mr_jazidas_v001` | 1 | 907.129 | 907.129 | ~1,5 GB | green | ANM SIGMINE + SCM + SICOP | Jazidas: `buscar_jazidas`, detalhes, vigência, disponibilidades |
 | `mr_cfem_v001` | 1 | 3.289.871 | 3.289.871 | 691 MB | green | ANM CFEM (`bot_cfem.py`) | Jazidas: CFEM, ranking arrecadação |
 | `mr_sigef_v001` | 2 | 1.411.595 | 1.411.595 | 1,0 GB | yellow | INCRA SIGEF (`bot_sigef.py`) | Geo: sobreposição imóveis rurais |
 | `mr_geoquimica_v001` | 2 | ~1,16M* | **77.180** | ~68 MB | green | CPRM OGC API (`bot_geoquimica.py`) | Jazidas: `geoquimica_proxima`, `geoquimica_detalhes_amostra` |
@@ -64,11 +64,11 @@ Coluna **Docs (cat)** = valor de `_cat/indices` (pode incluir filhos **nested**)
 
 ## Cobertura geográfica atual (dev local)
 
-O cluster local **não replica o Brasil inteiro** em todos os índices. Destaques medidos em 16/05/2026:
+O cluster local **não replica o Brasil inteiro** em todos os índices. Destaques medidos em 23/05/2026:
 
 | Índice | Cobertura observada |
 |--------|---------------------|
-| `mr_jazidas_v001` | ~907K processos (subconjunto ANM; meta produção ~25M ativos+inativos) |
+| `mr_jazidas_v001` | **907.129** processos — **256.733 ativos** + **650.396 inativos** — **SIGMINE nacional completo** (mai/2026): `BRASIL.zip` 266.637 features · `PROCESSOS_INATIVOS.zip` 663.788 features |
 | `mr_substancias_v001` | **862** substâncias — catálogo oficial ANM (`IDSubstancia` + `NMSubstancia`); `_id` = `id_anm` |
 | `mr_geoquimica_v001` | **77.180** features OGC indexadas (72.975 rocha + 4.205 mineral); ~22,5K `numero_de_campo` distintos (várias análises por campo) |
 | `mr_geoquimica_v001` | Revalidar cobertura Carajás/Paraíso com `validate_opensearch_cluster.py` após ingest completo |
@@ -130,9 +130,12 @@ O cluster local **não replica o Brasil inteiro** em todos os índices. Destaque
 
 | | |
 |--|--|
-| **Volume local** | 906.780 docs · 1,5 GB |
+| **Volume local** | **907.129** docs · ~1,5 GB (`ativo:true` **256.733** · `ativo:false` **650.396**) |
+| **SIGMINE geo (ANM mai/2026)** | ✅ **Completo** — `BRASIL.zip` (266.637 features) + `PROCESSOS_INATIVOS.zip` (663.788 features) |
+| **Nota ~~24M~~ / ~~600K~~** | Shapefiles públicos atuais ≈ **930K features** → **~907K** `_id` únicos. ~~24M~~ = cadastro tabular SCM (sem polígono), não o ZIP inativos |
 | **Schema** | Plano (sem nested profundo): `location` (geo_point), `geom` (geo_shape), `titular`, `substancias[]`, `cfem`, flags `n_restricoes_*`, correlação CPRM |
-| **ETL** | `bot_anm_direto.py`, `bot_scm.py`, `bot_sicop.py`, `bot_inativos.py`, `bot_enrich_municipio.py`, `bot_cprm.py --enrich-jazidas` |
+| **ETL shapefile** | `bot_anm_direto --all-ativos` · `--inativos` — **concluído** (23/05/2026) |
+| **ETL enriquecimento** | `bot_cfem --enrich-only`, `bot_sicop --microdados`, `bot_inativos`, `bot_cprm --enrich-jazidas`, `bot_enrich_municipio` |
 | **Busca** | BM25 pt-BR, filtros UF/município/fase/ativo, `geo_distance` em `location`, `geo_shape` em `geom` |
 | **k-NN** | Não — substâncias resolvidas via `mr_substancias_v001` + filtro `terms` |
 
@@ -331,9 +334,44 @@ Cache local dos ZIPs: `~/.mineralradar/data/autuacoes/` (ou `ETL_DATA_DIR/autuac
 
 ### Pendentes no cluster local
 
-| Índice | Situação | Próximo passo |
-|--------|----------|---------------|
-| `mr_ral_v001` | Criado, **0 docs** | Rodar ingest RAL/AMB |
+| Índice / lacuna | Situação | Próximo passo |
+|-----------------|----------|---------------|
+| `mr_jazidas_v001` — CFEM embarcado | ~4% com `cfem.total_historico > 0` | `bot_cfem --enrich-only` |
+| `mr_jazidas_v001` — CPRM | ~63% com `n_ocorrencias_cprm > 0` | `bot_cprm --enrich-jazidas --skip-download` |
+| `mr_jazidas_v001` — SICOP/datas | parcial (ativos ~70% `dt_validade`) | `bot_sicop --microdados` |
+| `mr_sicar_v001` | ~56K / ~6,8M (WFS 502) | aguardar `geoserver.car.gov.br` |
+| `mr_ral_v001` | 0 docs | ingest RAL/AMB (futuro) |
+
+### Comandos — próximos passos (enriquecimento pós-SIGMINE)
+
+Executar a partir de `mineral-radar-etl/` com venv ativo e OpenSearch em `localhost:9200`:
+
+```bash
+cd mineral-radar-etl && source .venv/bin/activate
+
+# 1) CFEM agregado nas jazidas (~30–60 min) — maior gap
+python -m bots.bot_cfem --enrich-only
+
+# 2) Prazos / vigência / NUP (requer microdados-scm.zip ~313 MB)
+python -m bots.bot_sicop --report-only          # cobertura antes
+python -m bots.bot_sicop --microdados           # download + enrich
+
+# 3) Titular / substâncias / categorias em inativos (se ainda faltar)
+python -m bots.bot_inativos --dry-run
+python -m bots.bot_inativos
+
+# 4) CPRM 10 km nos ~37% restantes
+python -m bots.bot_cprm --enrich-jazidas --skip-download
+
+# 5) Município IBGE (se aplicável)
+python -m bots.bot_enrich_municipio
+
+# Validar
+cd ../backend && python -m scripts.setup_indices --list
+python scripts/validate_opensearch_cluster.py
+```
+
+Ordem sugerida: **CFEM → SICOP → inativos → CPRM**.
 
 ---
 
@@ -414,3 +452,5 @@ curl -s 'http://localhost:9200/_cat/indices/mr_geoquimica_v001?v'
 | 2026-05-16 | `mr_autuacoes_v001` indexado (55.043 docs IBAMA SIFISC via `bot_autuacoes.py`) |
 | 2026-05-16 | Releitura ao vivo: `mr_cvm_listadas_v001` (367); cluster **yellow** ~3,8 GB |
 | 2026-05-16 | Migração `mr_autoacoes_v001` → `mr_autuacoes_v001` (55.043 docs; script `migrate_autuacoes_index.py`) |
+| 2026-05-23 | `mr_jazidas_v001`: ativos nacionais via `BRASIL.zip` (**266.637** features; **~257K** no índice). Corrigida meta ~~600K~~ → **~267K ativos** |
+| 2026-05-23 | Inativos nacionais via `PROCESSOS_INATIVOS.zip` (**663.788** features; **~650K** no índice). Corrigida meta ~~24M~~ inativos no shapefile → **~664K**; SIGMINE geo **completo**. Pendências: enriquecimentos CFEM/SICOP/CPRM |

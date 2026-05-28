@@ -22,8 +22,16 @@ export interface MapaPonto {
   endereco?: string
   telefone?: string
   email?: string
-  /** ANM process polygon vs CPRM occurrence buffer vs sem polígono (afloramentos). */
-  polygonFetch?: 'anm' | 'cprm' | 'none'
+  // ocorrencia_mineral (CPRM) specific
+  nome?: string
+  importancia?: string
+  status_economico?: string
+  descricao?: string
+  provincia?: string
+  /** ANM process polygon vs CPRM occurrence buffer vs CAR rural property vs sem polígono. */
+  polygonFetch?: 'anm' | 'cprm' | 'car' | 'none'
+  /** CAR-specific: status label (e.g. "Ativo") */
+  status?: string
 }
 
 export interface MapaPontoEmpresa {

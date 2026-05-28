@@ -29,6 +29,7 @@ import click
 import polars as pl
 from opensearchpy import OpenSearch, helpers
 
+from bots.bot_sicop import _opensearch_id_candidates
 from bots.common.logging import get_logger
 from bots.common.settings import settings
 
@@ -332,20 +333,23 @@ def enrich_jazidas_cfem(client: OpenSearch, csv_path: Path) -> None:
         mes_max = row.get("mes_max")
         ultima = _competencia(int(ano_max), int(mes_max)) if ano_max and mes_max else None
 
-        actions.append({
-            "_op_type": "update",
-            "_index":   INDEX_JAZIDAS,
-            "_id":      processo,
-            "doc": {
-                "cfem": {
-                    "total_historico":    round(float(row["total_historico"] or 0), 2),
-                    "ultimo_ano":         float(row["ultimo_ano"]) if row["ultimo_ano"] else None,
-                    "anos_producao":      int(row["anos_producao"] or 0),
-                    "ultima_arrecadacao": ultima,
-                }
-            },
-            "doc_as_upsert": False,
-        })
+        cfem_doc = {
+            "total_historico":    round(float(row["total_historico"] or 0), 2),
+            "ultimo_ano":         float(row["ultimo_ano"]) if row["ultimo_ano"] else None,
+            "anos_producao":      int(row["anos_producao"] or 0),
+            "ultima_arrecadacao": ultima,
+        }
+        doc_ids = _opensearch_id_candidates(processo)
+        if not doc_ids:
+            continue
+        for doc_id in doc_ids:
+            actions.append({
+                "_op_type": "update",
+                "_index":   INDEX_JAZIDAS,
+                "_id":      doc_id,
+                "doc":      {"cfem": cfem_doc},
+                "doc_as_upsert": False,
+            })
 
         if len(actions) >= 1_000:
             ok, errs = helpers.bulk(client, actions, raise_on_error=False)

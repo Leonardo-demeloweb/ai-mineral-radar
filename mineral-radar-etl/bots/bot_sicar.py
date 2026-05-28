@@ -428,7 +428,7 @@ def bulk_index(
 
 def run_enrich_jazidas(client: OpenSearch, uf: str | None, dry_run: bool):
     """
-    Para cada jazida ANM com centróide, verifica se existe imóvel CAR
+    Para cada jazida ANM com geo_point (`location`), verifica se existe imóvel CAR
     num raio de 5 km e marca sobreposicao_car=True em mr_jazidas_v001.
 
     Nota: esta verificação usa centróide (não sobreposição exata de polígono).
@@ -438,10 +438,10 @@ def run_enrich_jazidas(client: OpenSearch, uf: str | None, dry_run: bool):
 
     query: dict = {
         "size": SCROLL_SIZE,
-        "_source": ["numero_processo", "centroide"],
+        "_source": ["numero_processo", "location"],
         "query": {
             "bool": {
-                "must":   [{"exists": {"field": "centroide"}}],
+                "must":   [{"exists": {"field": "location"}}],
                 "filter": [] if not uf else [{"term": {"uf": uf}}],
             }
         },
@@ -460,9 +460,9 @@ def run_enrich_jazidas(client: OpenSearch, uf: str | None, dry_run: bool):
         updates = []
         for hit in hits:
             src     = hit["_source"]
-            centroid = src.get("centroide") or {}
-            lat = centroid.get("lat")
-            lon = centroid.get("lon")
+            pt = src.get("location") or {}
+            lat = pt.get("lat")
+            lon = pt.get("lon")
             if lat is None or lon is None:
                 continue
 

@@ -472,41 +472,115 @@ def extract_mapa_pontos(hits: list[dict]) -> list[dict]:
 
 
 def _hit_to_mapa_ponto(hit: dict) -> dict[str, Any] | None:
-    """Converte um hit em ponto de mapa, ou None se não houver coordenadas."""
+    """Converte um hit em ponto de mapa com todos os campos de exibição do popup."""
     source = hit.get("_source", {})
     loc = _source_geo_point(source)
     if not loc:
         return None
 
+    sort_values = hit.get("sort", [])
+    distancia_km: float | None = None
+    for sv in sort_values:
+        if isinstance(sv, (int, float)) and 0 < sv < 100_000:
+            distancia_km = round(sv, 2)
+            break
+
     if _is_flat_mr_empresas(source):
         cnae = source.get("cnae_principal")
-        nome = source.get("nome_fantasia") or source.get("razao_social", "")
+        cnae_descricao = source.get("cnae_desc")
+        razao_social = source.get("razao_social") or ""
+        nome_fantasia = source.get("nome_fantasia") or None
+        nome = nome_fantasia or razao_social
         cnpj_basico = str(source.get("cnpj_basico") or "")
         b, o, d = _cnpj_triple_from_flat_source(source)
         cnpj_completo = format_cnpj(b, o, d)
+        municipio = extract_municipio_nome(source.get("municipio")) or ""
+        uf = source.get("uf", "") or ""
+        situacao = str(source.get("situacao") or "")
+        porte = source.get("porte") or None
+        raw_cap = source.get("capital_social")
+        capital_social = None
+        if raw_cap is not None:
+            try:
+                v = float(raw_cap)
+                if v > 0:
+                    capital_social = round(v, 2)
+            except (TypeError, ValueError):
+                pass
+        telefone = source.get("telefone") or None
+        email = source.get("email") or None
+        # Build endereço display string
+        logra = (source.get("logradouro") or "").strip()
+        num = (source.get("numero") or "").strip()
+        comp = (source.get("complemento") or "").strip()
+        bairro = (source.get("bairro") or "").strip()
+        cep_raw = str(source.get("cep") or "").strip()
+        street = ", ".join(p for p in [logra, num, comp, bairro] if p)
+        if cep_raw:
+            street = f"{street} - CEP {cep_raw}" if street else f"CEP {cep_raw}"
+        endereco = street or None
     else:
         empresa = source.get("empresa", {}) or {}
-        cnae = (source.get("cnaeFiscalPrincipal") or {}).get("codigo")
-        nome = source.get("nomeFantasia") or empresa.get("razaoSocial", "")
+        cnae_obj = source.get("cnaeFiscalPrincipal") or {}
+        cnae = cnae_obj.get("codigo")
+        cnae_descricao = cnae_obj.get("descricao")
         cnpj_basico = empresa.get("cnpjBasico", "")
         cnpj_completo = format_cnpj(
             cnpj_basico,
             source.get("cnpjOrdem", ""),
             source.get("cnpjDv", ""),
         )
+        razao_social = empresa.get("razaoSocial", "")
+        nome_fantasia = source.get("nomeFantasia") or None
+        nome = nome_fantasia or razao_social
+        municipio = extract_municipio_nome(source.get("municipio")) or ""
+        uf = source.get("uf", "")
+        situacao = (source.get("situacaoCadastral") or {}).get("descricao", "")
+        porte_raw = empresa.get("porteEmpresa") or ""
+        porte = _PORTE_MAP.get(porte_raw, porte_raw) if porte_raw else None
+        raw_cap = empresa.get("capitalSocial")
+        capital_social = round(raw_cap, 2) if raw_cap and raw_cap > 0 else None
+        contato = build_contato(source)
+        telefone = contato.get("telefone") or None
+        email = contato.get("email") or None
+        endereco = contato.get("endereco") or None
 
     if not cnpj_completo:
         return None
 
-    return {
+    ponto: dict[str, Any] = {
         "lat": loc["lat"],
         "lon": loc["lon"],
         "tipo": "empresa",
         "cnpj_basico": cnpj_basico,
         "cnpj_completo": cnpj_completo,
         "nome": nome,
+        "razao_social": razao_social,
         "cnae": cnae,
     }
+    if nome_fantasia:
+        ponto["nome_fantasia"] = nome_fantasia
+    if cnae_descricao:
+        ponto["cnae_descricao"] = cnae_descricao
+    if municipio:
+        ponto["municipio"] = municipio
+    if uf:
+        ponto["uf"] = uf
+    if situacao:
+        ponto["situacao"] = situacao
+    if porte:
+        ponto["porte"] = porte
+    if capital_social is not None:
+        ponto["capital_social"] = capital_social
+    if telefone:
+        ponto["telefone"] = telefone
+    if email:
+        ponto["email"] = email
+    if endereco:
+        ponto["endereco"] = endereco
+    if distancia_km is not None:
+        ponto["distancia_km"] = distancia_km
+    return ponto
 
 
 # ==================== Full Orchestrator ====================

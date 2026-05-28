@@ -28,8 +28,8 @@ OpenSearch                    ← busca, filtros geo, embeddings k-NN
 
 | Tabela | Fonte | Volume |
 |--------|-------|--------|
-| `raw_anm_shapes` | SIGMINE (Shapefiles/ZIPs) | ~600K ativos + ~24M inativos |
-| `raw_anm_processos` | Cadastro Mineiro SCM (CSV) | ~600K |
+| `raw_anm_shapes` | SIGMINE (Shapefiles/ZIPs) | ~267K ativos + ~664K inativos (polígonos; mai/2026) |
+| `raw_anm_processos` | Cadastro Mineiro SCM (CSV) | ~267K+ (cadastro tabular; polígonos no SIGMINE) |
 | `raw_anm_cfem` | CFEM Arrecadação (CSV) | ~8M linhas |
 | `raw_anm_ral` | RAL Produção (CSV anual) | ~200K |
 | `raw_cprm_ocorrencias` | GeoBank WFS | ~50K |

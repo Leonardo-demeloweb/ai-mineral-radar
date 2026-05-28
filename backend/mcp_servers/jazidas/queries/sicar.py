@@ -331,6 +331,38 @@ async def executar_imoveis_car_proximos(
         f"nivel={resumo['nivel_atencao_fundiaria']}"
     )
 
+    # Mapa pontos — um pin por imóvel com coordenadas válidas
+    pontos_mapa = []
+    for im in imoveis:
+        c = None
+        # Tenta extrair centróide do hit original
+        for h in hits:
+            if h["_source"].get("cod_car") == im["cod_car"]:
+                c = h["_source"].get("centroide")
+                break
+        if not c:
+            continue
+        lat_p = c.get("lat") if isinstance(c, dict) else None
+        lon_p = c.get("lon") if isinstance(c, dict) else None
+        if lat_p is None or lon_p is None:
+            continue
+        ponto: dict = {
+            "lat":        float(lat_p),
+            "lon":        float(lon_p),
+            "tipo":       "car",
+            "processo":   im["cod_car"],
+            "label":      im.get("municipio") or im["cod_car"],
+            "substancias": [im.get("tipo") or "Imóvel Rural"],
+            "municipios": [im["municipio"]] if im.get("municipio") else [],
+            "uf":         [im["uf"]] if im.get("uf") else [],
+            "area_ha":    im.get("area_ha"),
+            "distancia_km": im.get("distancia_km"),
+            "status":     im.get("status"),
+        }
+        if im.get("proprietario"):
+            ponto["nome"] = im["proprietario"]
+        pontos_mapa.append(ponto)
+
     return {
         "consulta": {
             "lat": lat, "lon": lon,
@@ -341,6 +373,7 @@ async def executar_imoveis_car_proximos(
         "resumo_fundiario": resumo,
         "total_encontrados": total,
         "imoveis": imoveis,
+        "mapa": {"pontos": pontos_mapa},
     }
 
 

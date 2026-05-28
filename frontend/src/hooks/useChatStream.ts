@@ -99,6 +99,13 @@ interface SseRawPonto {
   fase?: string
   area_ha?: number
   tipo_requerimento?: string
+  ativo?: boolean
+  // ── ocorrencia_mineral (CPRM) fields ──────────────────────────
+  importancia?: string
+  status_economico?: string
+  descricao?: string
+  projeto?: string
+  provincia?: string
 }
 
 interface SseMapDataPayload {
@@ -788,12 +795,20 @@ function handleSseEvent({
             endereco: p.endereco,
             telefone: p.telefone,
             email: p.email,
+            nome: typeof p.nome === 'string' ? p.nome : undefined,
+            importancia: p.importancia,
+            status_economico: p.status_economico,
+            descricao: p.descricao,
+            provincia: p.provincia,
             polygonFetch:
               p.tipo === 'ocorrencia_mineral'
                 ? 'cprm' as const
-                : p.tipo === 'afloramento' || p.tipo === 'geoquimica'
-                  ? 'none' as const
-                  : 'anm' as const,
+                : p.tipo === 'car'
+                  ? 'car' as const
+                  : p.tipo === 'afloramento' || p.tipo === 'geoquimica'
+                    ? 'none' as const
+                    : 'anm' as const,
+            status: typeof p.status === 'string' ? p.status : undefined,
           }
         })
       buf.jazida.push(...markers)

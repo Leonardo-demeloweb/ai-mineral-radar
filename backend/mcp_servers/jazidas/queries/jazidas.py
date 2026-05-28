@@ -202,7 +202,7 @@ def build_jazidas_query(
     else:
         source_fields.extend(SHAPES_SOURCE_MINIMAL)
 
-    sort = _build_sort(has_geo, latitude, longitude)
+    sort = _build_sort(has_geo, latitude, longitude, area_min_ha, area_max_ha)
 
     bool_query: dict[str, Any] = {}
     if must_clauses:
@@ -366,7 +366,13 @@ def _has_valid_geo(lat: float | None, lon: float | None) -> bool:
     return lat is not None and lon is not None
 
 
-def _build_sort(has_geo: bool, lat: float | None, lon: float | None) -> list[dict]:
+def _build_sort(
+    has_geo: bool,
+    lat: float | None,
+    lon: float | None,
+    area_min_ha: float | None = None,
+    area_max_ha: float | None = None,
+) -> list[dict]:
     if has_geo:
         return [{
             "_geo_distance": {
@@ -375,6 +381,11 @@ def _build_sort(has_geo: bool, lat: float | None, lon: float | None) -> list[dic
                 "unit": "km",
             }
         }]
+    # When filtering by area (no geo centre), sort by area_ha DESC so the
+    # largest processes appear first — matches user expectation for "liste todos
+    # com mais de X ha" queries.
+    if area_min_ha is not None or area_max_ha is not None:
+        return [{"area_ha": {"order": "desc"}}]
     return [{"_score": {"order": "desc"}}]
 
 

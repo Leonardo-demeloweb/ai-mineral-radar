@@ -41,8 +41,8 @@
 
 | Base                                        | Conteúdo                                                                                       | Formato / Acesso                                                                                                                                                           | Status                        | Prioridade  |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------- |
-| **SIGMINE — Processos ativos**              | Polígonos, fases, substâncias, titulares, datas. ~600K processos ativos                        | ZIP com Shapefiles. `https://dadosabertos.anm.gov.br/SIGMINE/PROCESSOS_MINERARIOS/{UF}.zip` ou `BRASIL.zip` (~123MB). Atualizado diariamente.                              | 🟡 ETL necessário             | **Crítica** |
-| **SIGMINE — Processos inativos**            | Histórico completo de processos encerrados. ~24M docs históricos                               | `https://dadosabertos.anm.gov.br/SIGMINE/PROCESSOS_MINERARIOS/PROCESSOS_INATIVOS.zip` (~150MB). O ETL indexará ativos e inativos juntos — campo `ativo: bool` para filtro. | 🟡 ETL necessário             | Alta        |
+| **SIGMINE — Processos ativos**              | Polígonos, fases, substâncias, titulares, datas. **~267K** processos ativos com polígono (BRASIL.zip, verificado mai/2026) | ZIP com Shapefiles. `https://dadosabertos.anm.gov.br/SIGMINE/PROCESSOS_MINERARIOS/{UF}.zip` ou `BRASIL.zip` (~123MB, **266.637** features). Atualizado diariamente. | 🟡 ETL necessário             | **Crítica** |
+| **SIGMINE — Processos inativos**            | Processos encerrados **com polígono**. **~664K** features (verificado mai/2026) | `PROCESSOS_INATIVOS.zip` (~150MB, **663.788** features). Campo `ativo: false`. | ✅ ETL concluído (`bot_anm_direto --inativos`) | Alta |
 | **Cadastro Mineiro (SICOP)**                | Dados administrativos dos processos: requerimentos, portarias, atos, prazos, obrigações legais | CSV diário em `dados.gov.br` → buscar "SICOP ANM"                                                                                                                          | 🟡 ETL novo                   | Alta        |
 | **CFEM — Compensação Financeira**           | Arrecadação por substância, empresa e município. Série histórica desde 2010.                   | CSV diário em `dados.gov.br`                                                                                                                                               | 🟡 ETL novo                   | Alta        |
 | **RAL — Relatório Anual de Lavra**          | Produção bruta, beneficiada e água mineral por empresa, substância, município                  | CSV em `dados.gov.br` (base AMB)                                                                                                                                           | 🟡 ETL novo                   | Média       |
@@ -351,7 +351,7 @@
 
 *O que dá para fazer com pouco esforço e alto impacto:*
 
-1. **ETL ANM SIGMINE (ativos + inativos)** — `bot_anm.py` com download de `dadosabertos.anm.gov.br`. Indexar campo `ativo: bool` para permitir análise histórica dos ~24M processos inativos desde o início.
+1. **ETL ANM SIGMINE (ativos + inativos)** — ✅ `bot_anm_direto` — **~907K** polígonos nacionais (mai/2026). Campo `ativo: bool` para filtro.
 2. **Classificador de Minerais Estratégicos** — Módulo Python puro, sem ETL adicional, aplicado durante a indexação ANM. Classifica as 862 substâncias ANM em categorias estratégicas (TR, Li, Nb, Co, grafita, urânio). Alto impacto, baixo custo.
 3. **CPRM Ocorrências Minerais (GeoBank)** — OGC API `geoservicos.sgb.gov.br` (coleção `recursos-minerais`). Índice OpenSearch **`mr_cprm_v001`** (`bot_cprm.py`). **CPRM Geoquímica** — mesma API, coleções `analises-rocha` + `analises-mineral-minerio`; índice **`mr_geoquimica_v001`** (`bot_geoquimica.py`). Ambos conectam prospectividade e teores analíticos ao agente.
 4. **FUNAI Terras Indígenas** — Download mensal (GeoJSON/Shapefile), ETL simples. Remove o maior risco jurídico invisível do sistema atual.
@@ -385,7 +385,7 @@
 
 > **Verificado em 05/05/2026:**
 
-**Volume da ANM:** O portal `dadosabertos.anm.gov.br` disponibiliza ~600K processos ativos (BRASIL.zip, ~123MB) e ~24M processos históricos inativos (PROCESSOS_INATIVOS.zip, ~150MB). O ETL do MineralRadar indexará **ambos** desde a Fase 1, com campo `ativo: bool` para filtro padrão nas queries.
+**Volume da ANM (verificado mai/2026):** Shapefiles SIGMINE: **266.637** ativos (`BRASIL.zip`, ~123MB) + **663.788** inativos com polígono (`PROCESSOS_INATIVOS.zip`, ~150MB) ≈ **~907K** documentos únicos em `mr_jazidas_v001`. Estimativas antigas de ~~600K~~ ativos e ~~24M~~ inativos no shapefile estão desatualizadas; o cadastro tabular SCM (`microdados-scm.zip`) pode conter milhões de linhas **sem geometria** — enriquecimento via `bot_sicop` / `bot_inativos`, não via novo polígono.
 
 **Estratégia de indexação:** O índice `anm_processos_v001` do MineralRadar incluirá desde o início os campos enriquecidos: `categoria_mineral_estrategica`, `cfem_total_historico`, `restricoes_geo` (pré-computado no PostGIS), `ativo`. Isso é superior a qualquer sistema que indexe apenas dados brutos do Shapefile.
 
@@ -421,7 +421,7 @@ ANM — ZIPs com Shapefiles + CSVs tabulares
 
 | Índice                                            | Volume          | Tamanho estimado |
 | ------------------------------------------------- | --------------- | ---------------- |
-| `anm_processos_v001` (ativos + inativos)          | ~25M docs       | ~6 GB            |
+| `anm_processos_v001` / `mr_jazidas_v001` (SIGMINE geo) | ~907K docs      | ~1,5 GB          |
 | `rfb_cnpj_v001` (filtrado por relevância mineral) | ~350K docs      | ~400 MB          |
 | `anm_substancia_v001` (com embeddings k-NN)       | 862 docs        | ~5 MB            |
 | `ibge_municipio_v001` (com geo_shape)             | 5.631 docs      | ~950 MB          |
@@ -429,7 +429,9 @@ ANM — ZIPs com Shapefiles + CSVs tabulares
 | `mr_cprm_v001` (Fase 2)                           | ~36K docs       | ~25 MB           |
 | `mr_geoquimica_v001` (Fase 2)                     | ~65K docs       | ~80–120 MB       |
 | `restricoes_geo_v001` (Fase 2)                    | ~100K polígonos | ~2 GB            |
-| **Total estimado**                                | **~25,5M docs** | **~10 GB**       |
+| **Total estimado (Fase 1–2, dev mai/2026)**       | **~6,8M docs**  | **~4 GB**        |
+
+Composição `mr_jazidas_v001` (SIGMINE polígonos, mai/2026): **266.637** ativos + **663.788** inativos no shapefile → **~907K** `_id` únicos no índice. Cadastro SCM tabular (milhões de linhas sem polígono) é camada separada de enriquecimento.
 
 
 **Implicação prática:** com ~10 GB total, o cluster cabe confortavelmente em:

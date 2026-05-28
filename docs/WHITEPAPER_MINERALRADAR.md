@@ -67,7 +67,7 @@ Esse é o vetor de maior urgência, mas não é o único. **Toda** a atividade m
 ### Oportunidade de mercado (Brasil)
 
 - **+9.000 empresas** na cadeia mineral (mineração, beneficiamento, transporte, equipamentos, comércio)
-- **+600.000 processos minerários ativos**, cobrindo **862 substâncias** em todas as regiões do país
+- **+907.000 processos minerários com polígono** (SIGMINE nacional: **~267K ativos** + **~664K inativos**, mai/2026), cobrindo **862 substâncias**
 - **R$ 12 bilhões/ano** em CFEM (Compensação Financeira pela Exploração de Recursos Minerais)
 - Mercado de consultoria e due diligence mineral estimado em **R$ 800M–1,2B/ano**
 

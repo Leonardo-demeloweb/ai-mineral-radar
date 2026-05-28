@@ -10,7 +10,7 @@ geo_shape, geo_point e knn_vector (embeddings semânticos).
 ╠═══════════════════════════╦══════════════════════════╦══════════════╣
 ║ Índice                     ║ Fonte                    ║ Volume       ║
 ╠═══════════════════════════╬══════════════════════════╬══════════════╣
-║ mr_jazidas_v001            ║ ANM SIGMINE+SCM+SICOP    ║ ~25M / ~6GB  ║
+║ mr_jazidas_v001            ║ ANM SIGMINE+SCM+SICOP    ║ ~907K / ~1.5GB ║
 ║ mr_substancias_v001        ║ ANM substâncias          ║ 862 docs     ║
 ║ mr_tipo_uso_v001           ║ ANM tipo de uso          ║ ~26 docs     ║
 ║ mr_empresas_v001           ║ RFB CNPJ filtrado        ║ ~350K/~400MB ║

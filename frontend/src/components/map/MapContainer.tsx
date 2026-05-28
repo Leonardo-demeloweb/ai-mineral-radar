@@ -7,9 +7,11 @@ import { useChatStore } from '@/stores/chatStore'
 import { useUiStore } from '@/stores/uiStore'
 import { useProjeto } from '@/hooks/useProjetos'
 import { useAddFornecedor, useRemoveFornecedor, type AddFornecedorInput } from '@/hooks/useAnalises'
-import { fetchCprmPoligono, fetchJazidaPoligono } from '@/lib/api'
+import { fetchCarPoligono, fetchCprmPoligono, fetchJazidaPoligono } from '@/lib/api'
+import { PROJETO_TIPO_LABEL, PROJETO_STATUS_LABEL } from '@/lib/formatters'
 import type { StyleSpecification } from 'maplibre-gl'
 import type { MapaPonto, MapaPontoEmpresa, GeoJSONFeature, AddressPin } from '@/types/geojson'
+import type { Projeto } from '@/types/api'
 
 const RESIZE_DEBOUNCE_MS = 60
 
@@ -526,10 +528,11 @@ function groupByCoord<T extends { lat: number; lon: number }>(items: T[]): Coord
 
 function makePolygonToggleBtn(
   processoId: string,
-  polygonFetch: 'anm' | 'cprm' | 'none' = 'anm',
+  polygonFetch: 'anm' | 'cprm' | 'car' | 'none' = 'anm',
 ): string {
   if (polygonFetch === 'none') return ''
-  const nid = normalizeId(processoId)
+  // For CAR, use the raw cod_car as-is (no digit-normalization)
+  const nid = polygonFetch === 'car' ? processoId : normalizeId(processoId)
   if (!nid) return ''
 
   const state = useMapStore.getState()
@@ -551,17 +554,132 @@ function makePolygonToggleBtn(
     onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">${label}</button>`
 }
 
+function makeObraPopupHtml(obra: Projeto): string {
+  const { lat, lon } = obra.localizacao!
+  const rows: string[] = []
+  const tipoLabel   = PROJETO_TIPO_LABEL[obra.tipo]   ?? obra.tipo
+  const statusLabel = PROJETO_STATUS_LABEL[obra.status] ?? obra.status
+  rows.push(`⚙️ ${tipoLabel}`)
+  rows.push(`<span style="color:#16a34a;font-weight:600">${statusLabel}</span>`)
+  if (obra.municipio) rows.push(`📍 ${obra.municipio}${obra.uf ? `/${obra.uf}` : ''}`)
+  if (obra.endereco)  rows.push(`🏠 ${obra.endereco}`)
+  rows.push(`📏 Raio de busca: ${obra.raio_busca_km} km`)
+  if (obra.total_analises > 0)
+    rows.push(`📋 ${obra.total_analises} análise${obra.total_analises > 1 ? 's' : ''}`)
+
+  const actions = makePopupActions({
+    lat, lon,
+    routeLabel: obra.nome,
+    showStar: false,
+    starId: null,
+  })
+
+  return `<div style="font-size:12px;line-height:1.5;position:relative;max-width:280px;word-break:break-word">
+    ${actions.html}
+    <div style="padding-right:${actions.paddingRightPx}px">
+      <strong style="font-size:13px;display:block;margin-bottom:4px;color:#16a34a">🏗️ ${obra.nome}</strong>
+      ${rows.map((r) => `<div>${r}</div>`).join('')}
+    </div>
+  </div>`
+}
+
 function makeJazidaPopupHtml(p: MapaPonto, showStar: boolean): string {
-  const isGeo = p.tipo === 'geoquimica'
+  const isGeo          = p.tipo === 'geoquimica'
+  const isCprm         = p.tipo === 'ocorrencia_mineral'
+  const isAfloramento  = p.tipo === 'afloramento'
+  const isCar          = p.tipo === 'car'
+
   const subst = isGeo
     ? (p.analitos?.slice(0, 8).join(', ') ?? p.substancia ?? 'Amostra geoquímica')
     : (p.substancias?.join(', ') ?? p.label)
+
   const muns  = p.municipios?.join(', ') ?? ''
   const ufs   = p.uf?.join('/') ?? ''
   const local = [muns, ufs].filter(Boolean).join('/')
+
+  const id = isGeo ? normalizeAmostraId(p.id) : normalizeId(p.id)
+
+  // ── CAR rural property popup ─────────────────────────────────────────────
+  if (isCar) {
+    const nome   = p.nome || p.municipios?.[0] || p.id || 'Imóvel Rural'
+    const tipo   = p.substancias?.[0] || 'Imóvel Rural'
+    const rows: string[] = []
+    if (p.status)
+      rows.push(`<span style="color:#16a34a;font-weight:600">${p.status}</span>`)
+    if (local)           rows.push(`📍 ${local}`)
+    if (p.area_ha)       rows.push(`📐 ${p.area_ha} ha`)
+    if (p.distancia_km)  rows.push(`<span style="color:#64748b">📏 ${p.distancia_km} km</span>`)
+
+    const actions = makePopupActions({
+      lat: p.lat, lon: p.lon, routeLabel: nome, showStar: false, starId: null,
+    })
+
+    return `<div style="font-size:12px;line-height:1.5;position:relative;max-width:300px;word-break:break-word">
+      ${actions.html}
+      <div style="padding-right:${actions.paddingRightPx}px">
+        <strong style="font-size:13px;display:block;margin-bottom:2px">${nome}</strong>
+        <div style="color:#15803d;margin-bottom:4px">${tipo} · CAR</div>
+        ${rows.map((r) => `<div>${r}</div>`).join('')}
+      </div>
+      ${makePolygonToggleBtn(p.id, 'car')}
+    </div>`
+  }
+
+  // ── Afloramento geológico popup ──────────────────────────────────────────
+  if (isAfloramento) {
+    const rochas = p.substancias?.[0] || p.label || 'Afloramento'
+    const rows: string[] = []
+    if (p.substancia)    rows.push(`🪨 ${p.substancia}`)
+    if (local)           rows.push(`📍 ${local}`)
+    if (p.projeto)       rows.push(`📋 ${p.projeto}`)
+    if (p.descricao)     rows.push(`<span style="color:#64748b">${p.descricao.slice(0, 200)}</span>`)
+    if (p.distancia_km)  rows.push(`<span style="color:#64748b">📏 ${p.distancia_km} km</span>`)
+
+    const actions = makePopupActions({
+      lat: p.lat, lon: p.lon, routeLabel: rochas, showStar: false, starId: null,
+    })
+
+    return `<div style="font-size:12px;line-height:1.5;position:relative;max-width:300px;word-break:break-word">
+      ${actions.html}
+      <div style="padding-right:${actions.paddingRightPx}px">
+        <strong style="font-size:13px;display:block;margin-bottom:2px">${rochas}</strong>
+        <div style="color:#0ea5e9;margin-bottom:4px">Afloramento Geológico · CPRM</div>
+        ${rows.map((r) => `<div>${r}</div>`).join('')}
+      </div>
+    </div>`
+  }
+
+  // ── CPRM occurrence popup ────────────────────────────────────────────────
+  if (isCprm) {
+    const title = p.nome || p.id || 'Ocorrência'
+    const rows: string[] = []
+    if (p.importancia)       rows.push(`⭐ ${p.importancia}`)
+    if (p.status_economico)  rows.push(`⛏️ ${p.status_economico}`)
+    if (local)               rows.push(`📍 ${local}`)
+    if (p.projeto)           rows.push(`📋 ${p.projeto}`)
+    if (p.provincia)         rows.push(`🗺️ ${p.provincia}`)
+    if (p.descricao)         rows.push(`<span style="color:#64748b">${p.descricao.slice(0, 200)}</span>`)
+    if (p.distancia_km)      rows.push(`<span style="color:#64748b">📏 ${p.distancia_km} km</span>`)
+
+    const routeLabel = p.nome || p.id || 'ocorrência'
+    const actions = makePopupActions({
+      lat: p.lat, lon: p.lon, routeLabel, showStar: false, starId: null,
+    })
+
+    return `<div style="font-size:12px;line-height:1.5;position:relative;max-width:300px;word-break:break-word">
+      ${actions.html}
+      <div style="padding-right:${actions.paddingRightPx}px">
+        <strong style="font-size:13px;display:block;margin-bottom:2px">${title}</strong>
+        <div style="color:#7c3aed;margin-bottom:4px">${subst || 'Ocorrência Mineral'}</div>
+        ${rows.map((r) => `<div>${r}</div>`).join('')}
+      </div>
+      ${makePolygonToggleBtn(p.id, 'cprm')}
+    </div>`
+  }
+
+  // ── Jazida / geoquímica popup ────────────────────────────────────────────
   const titular = p.titulares?.[0] ?? ''
   const cnpjs = (p.cnpj_titulares ?? []).filter(Boolean)
-  const id = isGeo ? normalizeAmostraId(p.id) : normalizeId(p.id)
   const rows: string[] = []
   if (isGeo && p.projeto) rows.push(`📋 ${p.projeto}`)
   if (isGeo && p.substancia) rows.push(`🪨 ${p.substancia}`)
@@ -759,6 +877,13 @@ export function MapContainer({ height = 460 }: Props) {
       el.style.cssText = 'cursor:pointer;width:32px;height:40px;display:block;line-height:0'
       el.title = activeObra!.nome
 
+      const popup = new maplibregl.Popup({
+        offset: [0, -40],
+        closeButton: true,
+        closeOnClick: false,
+        maxWidth: '300px',
+      }).setHTML(makeObraPopupHtml(activeObra!))
+
       const marker = new maplibregl.Marker({
         element: el,
         anchor: 'top-left',
@@ -767,6 +892,7 @@ export function MapContainer({ height = 460 }: Props) {
         rotationAlignment: 'viewport',
       })
         .setLngLat([lon, lat])
+        .setPopup(popup)
 
       obraMarkerRef.current = marker
 
@@ -1723,6 +1849,12 @@ export function MapContainer({ height = 460 }: Props) {
           .setPopup(popup)
           .addTo(m)
 
+        el.addEventListener('click', (e) => {
+          e.stopPropagation() // prevent _onMapClick (map-level) from double-toggling
+          selectFeature(entryId)
+          marker.togglePopup()
+        })
+
         if (!visibleNow) el.style.display = 'none'
 
         bounds.extend([g.lon, g.lat])
@@ -1783,13 +1915,20 @@ export function MapContainer({ height = 460 }: Props) {
         let popup: maplibregl.Popup
         const head = g.items[0]
         const isGeoGroup = head.tipo === 'geoquimica'
+        const isCarGroup = head.tipo === 'car'
         const entryId = isGeoGroup
           ? normalizeAmostraId(head.id)
-          : (normalizeId(head.id) || g.key)
+          : isCarGroup
+            ? (head.id || g.key)
+            : (normalizeId(head.id) || g.key)
 
         // Register fornecedor data for each item in the group
         for (const p of g.items) {
-          const nid = p.tipo === 'geoquimica' ? normalizeAmostraId(p.id) : normalizeId(p.id)
+          const nid = p.tipo === 'geoquimica'
+            ? normalizeAmostraId(p.id)
+            : p.tipo === 'car'
+              ? p.id
+              : normalizeId(p.id)
           if (nid) {
             fornecedorDataRef.current.set(nid, {
               id: nid,
@@ -1811,17 +1950,19 @@ export function MapContainer({ height = 460 }: Props) {
           }
         }
 
+        const groupPinColor = isGeoGroup ? '#f59e0b' : isCarGroup ? '#a16207' : '#10b981'
+
         let pinOffset: [number, number]
         if (g.items.length === 1) {
           el = document.createElement('div')
-          el.innerHTML = makeMarkerSvg(isGeoGroup ? '#f59e0b' : '#10b981')
+          el.innerHTML = makeMarkerSvg(groupPinColor)
           el.style.cssText = 'cursor:pointer;width:22px;height:28px;display:block;line-height:0'
           el.title = g.items[0].label
           popup = new maplibregl.Popup({ offset: 24, closeButton: true, closeOnClick: false, maxWidth: '260px' })
             .setHTML(makeJazidaPopupHtml(g.items[0], hasEstudo))
           pinOffset = [-11, -28]
         } else {
-          el = makeClusterEl(g.items.length, isGeoGroup ? '#f59e0b' : '#10b981')
+          el = makeClusterEl(g.items.length, groupPinColor)
           el.title = `${g.items.length} jazidas`
           popup = new maplibregl.Popup({ offset: 24, closeButton: true, closeOnClick: false, maxWidth: '320px' })
             .setHTML(`<div style="font-size:12px;max-height:300px;overflow-y:auto">
@@ -1856,9 +1997,10 @@ export function MapContainer({ height = 460 }: Props) {
           .setPopup(popup)
           .addTo(m)
 
-        el.addEventListener('click', () => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation() // prevent _onMapClick (map-level) from double-toggling
           selectFeature(entryId)
-          if (!popup.isOpen()) marker.togglePopup()
+          marker.togglePopup()
         })
 
         if (!visibleNow) el.style.display = 'none'
@@ -2029,7 +2171,7 @@ export function MapContainer({ height = 460 }: Props) {
       btn.style.background = '#64748b'
       store.setJazidaPolygonLoading(processoId, true)
 
-      const fetchKind = (btn.dataset.polygonFetch as 'anm' | 'cprm' | 'none' | undefined) ?? 'anm'
+      const fetchKind = (btn.dataset.polygonFetch as 'anm' | 'cprm' | 'car' | 'none' | undefined) ?? 'anm'
       if (fetchKind === 'none') {
         useMapStore.getState().setJazidaPolygonLoading(processoId, false)
         useMapStore.getState().toggleJazidaPolygon(processoId)
@@ -2037,10 +2179,13 @@ export function MapContainer({ height = 460 }: Props) {
         btn.style.background = '#16a34a'
         return
       }
-      // Reconstruct original processo string for ANM: "8003351992" → "800.335/1992"
+      // For ANM, reconstruct original processo string: "8003351992" → "800.335/1992"
+      // For CAR, rawProcesso IS the cod_car (stored verbatim in data-raw-processo)
       const rawId = btn.dataset.rawProcesso ?? processoId
       const fetchPromise =
-        fetchKind === 'cprm' ? fetchCprmPoligono(rawId) : fetchJazidaPoligono(rawId)
+        fetchKind === 'cprm' ? fetchCprmPoligono(rawId)
+        : fetchKind === 'car' ? fetchCarPoligono(rawId)
+        : fetchJazidaPoligono(rawId)
 
       fetchPromise
         .then((fc) => {

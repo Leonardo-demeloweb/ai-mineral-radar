@@ -58,11 +58,15 @@ def extract_mapa_pontos(hits: list[dict]) -> list[dict]:
 
     Supports both new schema (location/numero_processo/substancias_desc/fase)
     and legacy schema (localizacao/dsProcesso/nmSubstancias/faseProcesso).
+
+    Emits all display fields so the frontend popup has full details without
+    a second API call.
     """
     pontos: list[dict] = []
 
     for hit in hits:
         source = hit.get("_source", {})
+        sort_values = hit.get("sort", [])
 
         # New schema (mr_jazidas_v001)
         processo = source.get("numero_processo") or source.get("dsProcesso", "")
@@ -71,17 +75,47 @@ def extract_mapa_pontos(hits: list[dict]) -> list[dict]:
         )
         fase = source.get("fase") or (source.get("faseProcesso") or {}).get("dsFaseProcesso")
 
+        # Titular info
+        titular_obj = source.get("titular") or {}
+        titular_nome = titular_obj.get("nome") or titular_obj.get("razao_social")
+        titular_cnpj = titular_obj.get("cnpj_basico")
+
+        # UF / município
+        uf_val = source.get("uf")
+        municipio_val = source.get("municipio")
+
+        # Distance from geo_distance sort
+        distancia_km = None
+        if sort_values and isinstance(sort_values[0], (int, float)):
+            distancia_km = round(float(sort_values[0]), 2)
+
         # New schema uses "location", legacy uses "localizacao"
         loc = source.get("location") or source.get("localizacao")
         if loc and isinstance(loc, dict) and loc.get("lat") and loc.get("lon"):
-            pontos.append({
+            ponto: dict = {
                 "lat": loc["lat"],
                 "lon": loc["lon"],
                 "processo": processo,
                 "substancia": substancias[0] if substancias else None,
+                "substancias": substancias,
                 "fase": fase,
                 "tipo": "centroide",
-            })
+                "area_ha": source.get("area_ha"),
+                "ativo": bool(source.get("ativo", True)),
+            }
+            if uf_val:
+                ponto["uf"] = [uf_val] if isinstance(uf_val, str) else uf_val
+            if municipio_val:
+                ponto["municipios"] = (
+                    [municipio_val] if isinstance(municipio_val, str) else municipio_val
+                )
+            if titular_nome:
+                ponto["titulares"] = [titular_nome]
+            if titular_cnpj:
+                ponto["cnpj_titulares"] = [titular_cnpj]
+            if distancia_km is not None:
+                ponto["distancia_km"] = distancia_km
+            pontos.append(ponto)
 
     return pontos
 

@@ -695,11 +695,15 @@ def _generate_updates(
       `_opensearch_id_candidates` emite um update por variante (pontuado e sem
       ponto quando diferem), para atingir ativos e inativos.
 
-    O script Painless só preenche campos que ainda estão nulos no documento —
-    não sobrescreve dados existentes.
+    O script Painless preenche campos nulos. dt_requerimento também substitui
+    a aproximação do shapefile (AAAA-01-01), alinhado a bot_anm_direto.py.
+    Demais campos não sobrescrevem valores já preenchidos.
     """
     SCRIPT = """
-        if (params.dt_requerimento != null && (ctx._source.dt_requerimento == null || ctx._source.dt_requerimento == ''))
+        if (params.dt_requerimento != null && (
+                ctx._source.dt_requerimento == null
+                || ctx._source.dt_requerimento == ''
+                || ctx._source.dt_requerimento.endsWith('-01-01')))
             { ctx._source.dt_requerimento = params.dt_requerimento; }
         if (params.dt_validade != null && (ctx._source.dt_validade == null || ctx._source.dt_validade == ''))
             { ctx._source.dt_validade = params.dt_validade; }

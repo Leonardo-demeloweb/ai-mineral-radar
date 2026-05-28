@@ -316,6 +316,87 @@ async def get_cprm_poligono(id_ocorrencia: str):
 
 
 @router.get(
+    "/car/poligono",
+    summary="Polígono GeoJSON de um imóvel CAR (on-demand, cached)",
+    responses={
+        200: {"description": "GeoJSON FeatureCollection com o polígono do imóvel"},
+        404: {"description": "Imóvel não encontrado ou sem geometria"},
+        503: {"description": "OpenSearch indisponível"},
+    },
+)
+async def get_car_poligono(cod_car: str):
+    """
+    Fetch the GeoJSON polygon for a CAR rural property from mr_sicar_v001.
+
+    Cache strategy (TTL 7 days):
+        Redis hit  → return immediately
+        Redis miss → query OpenSearch mr_sicar_v001 by cod_car, extract geometry
+    """
+    import json
+    from mcp_servers.common.redis_cache import get_redis_cache
+
+    cod = cod_car.strip()
+    if not cod:
+        raise HTTPException(status_code=400, detail="cod_car não pode ser vazio.")
+
+    cache_key = f"poligono:car:{cod}"
+    redis_cache = await get_redis_cache()
+
+    cached = await redis_cache.get(cache_key)
+    if cached:
+        logger.info("car_poligono: cache HIT", cod_car=cod)
+        return json.loads(cached)
+
+    logger.info("car_poligono: cache MISS — querying OpenSearch", cod_car=cod)
+
+    try:
+        from mcp_servers.common.opensearch_client import get_opensearch
+
+        os_service = await get_opensearch()
+        query = {
+            "query": {"term": {"cod_car": cod}},
+            "_source": ["cod_car", "geom", "area_ha", "municipio", "uf", "tipo_imovel", "status_car", "nome_proprietario"],
+            "size": 1,
+        }
+        result = await os_service.search("mr_sicar_v001", query)
+        hits = result.get("hits", {}).get("hits", [])
+    except Exception as e:
+        logger.error("car_poligono: OpenSearch error", error=str(e), cod_car=cod)
+        raise HTTPException(status_code=503, detail=f"OpenSearch indisponível: {e}")
+
+    if not hits:
+        raise HTTPException(status_code=404, detail=f"Imóvel CAR '{cod}' não encontrado.")
+
+    source = hits[0].get("_source") or {}
+    geom = source.get("geom")
+    if not geom or not isinstance(geom, dict) or geom.get("type") not in ("Polygon", "MultiPolygon"):
+        raise HTTPException(status_code=404, detail=f"Imóvel CAR '{cod}' não possui geometria de polígono.")
+
+    feature = {
+        "type": "Feature",
+        "properties": {
+            "cod_car":    source.get("cod_car") or cod,
+            "area_ha":    source.get("area_ha"),
+            "municipio":  source.get("municipio"),
+            "uf":         source.get("uf"),
+            "tipo":       source.get("tipo_imovel"),
+            "status":     source.get("status_car"),
+            "proprietario": source.get("nome_proprietario"),
+        },
+        "geometry": geom,
+    }
+    feature_collection = {"type": "FeatureCollection", "features": [feature]}
+
+    try:
+        await redis_cache.set(cache_key, json.dumps(feature_collection, ensure_ascii=False), ttl=_POLIGONO_TTL)
+        logger.info("car_poligono: cached", cod_car=cod)
+    except Exception as e:
+        logger.warning("car_poligono: failed to cache", error=str(e))
+
+    return feature_collection
+
+
+@router.get(
     "/ferrovia/geometria",
     summary="GeoJSON de um trecho ferroviário (on-demand, cached)",
     responses={

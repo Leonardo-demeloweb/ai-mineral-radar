@@ -224,7 +224,7 @@
 
 ### 3.1 Inteligência Mineral (Jazidas)
 
-> Foco em **`mr_jazidas_v001`** (~25M docs ativos + inativos) e índices
+> Foco em **`mr_jazidas_v001`** (~907K docs SIGMINE geo + enriquecimentos) e índices
 > derivados (`mr_substancias_v001`, `mr_cfem_v001`).
 
 | Cenário | Pergunta exemplo |
@@ -601,8 +601,8 @@
 Para validar uma versão do agente, garantir cobertura mínima em cada eixo:
 
 - [ ] **8 rotas** do roteador testadas com ≥ 3 perguntas cada (24 testes).
-- [ ] **Cada tool MCP** (17 jazidas + 8 empresas + 12 geo + 1 synthetic =
-      38 tools) invocada ao menos uma vez por perguntas reais.
+- [ ] **Cada tool MCP** (19 jazidas + 9 empresas + 18 geo =
+      **46 tools**) invocada ao menos uma vez por perguntas reais.
 - [ ] **Cada índice OpenSearch** (mr_jazidas, mr_empresas, mr_cnae,
       mr_substancias, mr_cfem, mr_cprm, **mr_geoquimica**, mr_municipios,
       mr_biomas, mr_provincias, mr_sigef, mr_sicar, mr_mercado, mr_autuacoes,

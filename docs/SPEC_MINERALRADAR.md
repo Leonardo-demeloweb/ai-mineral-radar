@@ -10,7 +10,7 @@
 
 ### 1.1 Conceito
 
-O **MineralRadar** é uma plataforma de inteligência mineral construída do zero, focada em mineração estratégica, terras raras e inteligência de processos minerários no Brasil.
+O **MineralRadar** é uma plataforma de inteligência mineral, focada em mineração estratégica, terras raras e inteligência de processos minerários no Brasil.
 
 A plataforma combina:
 
@@ -443,7 +443,7 @@ Campos originais do MineralRadar (além dos campos brutos do shapefile ANM):
 
 | Índice                  | Fonte                            | Volume estimado | Tamanho | Conteúdo                                                            |
 | ----------------------- | -------------------------------- | --------------- | ------- | ------------------------------------------------------------------- |
-| `anm_processos_v001`    | ANM SIGMINE + CFEM + SCM + SICOP | ~25M docs       | ~6 GB   | Processos minerários com campos enriquecidos (ativos + inativos)    |
+| `anm_processos_v001`    | ANM SIGMINE + CFEM + SCM + SICOP | ~907K docs (geo) | ~1,5 GB | Polígonos SIGMINE completos (**~267K ativos** + **~664K inativos**, mai/2026); SCM tabular enriquece campos |
 | `anm_substancia_v001`   | ANM tabela de substâncias        | 862 docs        | ~5 MB   | 862 substâncias + `categoria_estrategica` + embeddings k-NN         |
 | `rfb_cnpj_v001`         | Receita Federal (filtrado)       | **~350K docs**  | ~400 MB | Empresas relevantes ao domínio mineral (ver §6.3)                   |
 | `ibge_municipio_v001`   | IBGE — malha municipal           | 5.631 docs      | ~950 MB | Municípios com geo_shape e hierarquia                               |
@@ -461,7 +461,7 @@ O bulk RFB tem 221M estabelecimentos / 68 GB. Indexar tudo seria desnecessário 
 
 | Critério | Volume estimado |
 |---|---|
-| Titulares de processos ANM (todos os 25M processos) | ~150K CNPJs |
+| Titulares de processos ANM (SIGMINE geo indexado) | ~150K CNPJs |
 | CNAE Indústrias Extrativas (Seção B: 05xx-09xx) | ~80K CNPJs |
 | Top arrecadadores CFEM (histórico completo) | ~20K CNPJs |
 | Sócios PJ recursivos (1 nível) das empresas dos critérios 1-3 | +50K CNPJs |

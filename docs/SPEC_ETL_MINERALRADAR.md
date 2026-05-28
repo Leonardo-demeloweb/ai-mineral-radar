@@ -24,7 +24,7 @@ O MineralRadar consumirá **10+ fontes** com estruturas completamente diferentes
 | Fonte | Formato de origem | Canal de obtenção | Necessidade de transformação |
 |---|---|---|---|
 | ANM — processos (tabular) | Arquivos de texto relacionais (múltiplas tabelas) | `https://dadosabertos.anm.gov.br/SCM/microdados/microdados-scm.zip` (~313MB, diário) ou CSVs individuais por tipo de título | Alta — join entre processos, substâncias, municípios, titulares, eventos |
-| ANM — shapes (SIGMINE) | ZIP com Shapefiles ESRI (ativos + inativos) | `https://dadosabertos.anm.gov.br/SIGMINE/PROCESSOS_MINERARIOS/{UF}.zip` ou `BRASIL.zip` (~123MB). Inativos: `PROCESSOS_INATIVOS.zip` (~150MB). Atualizado diariamente. | Alta — converter para GeoJSON, reprojetar para WGS84, separar por estado |
+| ANM — shapes (SIGMINE) | ZIP com Shapefiles ESRI (ativos + inativos) | `BRASIL.zip` (~123MB, **266.637** features). Inativos: `PROCESSOS_INATIVOS.zip` (~150MB, **663.788** features). Atualizado diariamente. | Alta — converter para GeoJSON, reprojetar para WGS84 |
 | ANM — CFEM | CSV por período | `https://dadosabertos.anm.gov.br/CFEM/CFEM_Arrecadacao.csv` (~221MB completo) ou fatias por período (2002-2026). Atualizado diariamente. | Média — agregar por processo, calcular série histórica |
 | ANM — RAL (produção) | CSV por empresa/ano-base | `dados.gov.br` → "Anuário Mineral / RAL" (AMB) | Média — join com processo ANM via CNPJ/NUP |
 | CPRM — Ocorrências Minerais | GeoJSON via OGC API Features | SGB `geoservicos.sgb.gov.br/ogcapi` (coleção `recursos-minerais`; legado WFS GeoPortal) | Baixa — já estruturado |
@@ -252,7 +252,7 @@ Esse join entre ANM + CFEM + RFB — impossível de fazer de forma confiável em
 
 ## 8. Próximos passos para o ETL
 
-1. ✅ **Endereço do download bulk SIGMINE confirmado** — o novo portal é `https://dadosabertos.anm.gov.br`. Protocolo: HTTP puro (não FTP), requer `User-Agent` de browser. Shapefiles: `https://dadosabertos.anm.gov.br/SIGMINE/PROCESSOS_MINERARIOS/` — ZIPs por UF atualizados diariamente às ~00h. Arquivo Brasil completo: `BRASIL.zip` (~123MB). Inativos separados: `PROCESSOS_INATIVOS.zip` (~150MB). Cadastro Mineiro: `https://dadosabertos.anm.gov.br/SCM/microdados/microdados-scm.zip` (~313MB).
+1. ✅ **Endereço do download bulk SIGMINE confirmado** — `https://dadosabertos.anm.gov.br`. `BRASIL.zip` (~123MB, **266.637** features). `PROCESSOS_INATIVOS.zip` (~150MB, **663.788** features). Cadastro Mineiro: `microdados-scm.zip` (~313MB, tabular).
 2. **Criar repositório** `mineral-radar-etl` com estrutura de pastas por bot e schema PostgreSQL
 3. **Modelar o schema PostgreSQL** — definir tabelas `raw_*` e `staging_*`, chaves primárias, índices geográficos
 4. **Prototipar bot_anm.py** — download de `{UF}.zip` de `dadosabertos.anm.gov.br/SIGMINE/PROCESSOS_MINERARIOS/` → unzip + GeoPandas → PostgreSQL. Começar por `AC.zip` (~168KB) como estado menor para teste.
